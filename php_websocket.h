@@ -84,11 +84,14 @@ typedef struct _channels_server_object {
 extern zend_class_entry *websocket_server_ce;
 extern zend_class_entry *websocket_connection_ce;
 extern zend_class_entry *websocket_message_type_ce;
+extern zend_class_entry *websocket_frame_ce;
+extern zend_class_entry *websocket_protocol_ce;
 extern zend_class_entry *channels_app_ce;
 extern zend_class_entry *channels_server_ce;
 
 void websocket_register_server_class(void);
 void websocket_register_connection_class(void);
+void websocket_register_protocol_classes(void);
 void websocket_register_channels_app_class(void);
 void websocket_register_channels_server_class(void);
 

@@ -5,6 +5,7 @@ Native PHP extension for WebSocket workers and Pusher Channels compatible realti
 This repository currently contains the first contract spike from the implementation plan:
 
 - `WebSocket\Server`, `WebSocket\Connection`, and `WebSocket\MessageType`
+- `WebSocket\Protocol` and `WebSocket\Frame` for embeddable sync/async adapters
 - `Channels\Server` and `Channels\App`
 - PHP stubs plus C arginfo/class registration
 - PHP 8.1-8.5 compatibility shims in `php_websocket_compat.h`
@@ -41,6 +42,13 @@ TEST_PHP_ARGS="-d extension=$PWD/modules/websocket.so" php run-tests.php -q test
 The extension builds and loads, but the networking engine is not implemented yet. `listen()`, callback registration, `run()`, and Channels API methods currently establish the object lifecycle and validation surface for the next phase.
 
 The internal shape intentionally mirrors `php-eventloop`: `config.m4` detects `epoll`, `kqueue`, `poll`, and `select`; `php_websocket.h` owns the module globals and driver interface; `websocket.c` owns `MINIT`, `RINIT`, `RSHUTDOWN`, `MINFO`, and best-driver selection.
+
+The public API is split so it can serve both synchronous and asynchronous PHP:
+
+- `WebSocket\Server` will own a blocking/native worker loop for direct synchronous use.
+- `WebSocket\Protocol` is stateless and does not own sockets or an event loop. Async adapters for Amp, ReactPHP, Revolt, or native PHP streams can read bytes themselves, call `Protocol::decode()`, and write bytes from `Protocol::encode()`.
+
+This follows the shape used by AMPHP: async libraries own scheduling, cancellation, and sockets, while WebSocket parsing and frame construction remain replaceable implementation details.
 
 Next implementation phase:
 

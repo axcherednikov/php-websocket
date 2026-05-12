@@ -49,6 +49,28 @@ enum MessageType
     case Close;
 }
 
+final class Frame
+{
+    public readonly MessageType $type;
+
+    public readonly string $payload;
+
+    public readonly bool $final;
+
+    public readonly int $bytesConsumed;
+
+    public function __construct(MessageType $type, string $payload, bool $final = true, int $bytesConsumed = 0) {}
+}
+
+final class Protocol
+{
+    public static function acceptKey(string $key): string {}
+
+    public static function encode(string $payload, MessageType $type = MessageType::Text, bool $masked = false): string {}
+
+    public static function decode(string $buffer): ?Frame {}
+}
+
 namespace Channels;
 
 final class Server

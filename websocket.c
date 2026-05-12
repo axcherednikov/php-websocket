@@ -8,6 +8,8 @@ ZEND_DECLARE_MODULE_GLOBALS(websocket)
 zend_class_entry *websocket_server_ce;
 zend_class_entry *websocket_connection_ce;
 zend_class_entry *websocket_message_type_ce;
+zend_class_entry *websocket_frame_ce;
+zend_class_entry *websocket_protocol_ce;
 zend_class_entry *channels_app_ce;
 zend_class_entry *channels_server_ce;
 
@@ -67,6 +69,7 @@ PHP_MINIT_FUNCTION(websocket)
 	websocket_register_server_class();
 	websocket_register_connection_class();
 	websocket_message_type_ce = register_class_WebSocket_MessageType();
+	websocket_register_protocol_classes();
 	websocket_register_channels_app_class();
 	websocket_register_channels_server_class();
 
