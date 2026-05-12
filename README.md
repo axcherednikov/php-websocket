@@ -1,60 +1,116 @@
 # ext-websocket
 
-Native PHP extension for WebSocket workers and Pusher Channels compatible realtime broadcasting.
+Native WebSocket extension for PHP.
 
-This repository currently contains the first contract spike from the implementation plan:
+The project is at `0.1.0`: the extension builds, registers the public PHP API, and contains the first native RFC 6455 protocol helpers. The WebSocket server runtime is not implemented yet.
 
-- `WebSocket\Server`, `WebSocket\Connection`, and `WebSocket\MessageType`
-- `WebSocket\Protocol`, `WebSocket\Frame`, and `WebSocket\CloseFrame` for embeddable sync/async adapters
-- `Channels\Server` and `Channels\App`
-- PHP stubs plus C arginfo/class registration
-- PHP 8.1-8.5 compatibility shims in `php_websocket_compat.h`
-- request-scoped module globals and native driver selection, following the `php-eventloop` layout
-- a `.phpt` contract test
+The goal is to keep the expensive protocol work in C and expose a small PHP API that can be used from normal PHP code, async runtimes, and later from a Channels-compatible broadcasting server.
 
-## PHP compatibility target
+## Requirements
 
-The extension is written to target PHP 8.1+ APIs. PHP 8.1 is the minimum because the public contract uses enums and readonly properties.
+- PHP >= 8.1
+- Linux, macOS, BSD, or another POSIX-compatible OS
+- `phpize`, `php-config`, make, and a C compiler
 
-For open-source development, PHP 8.3 is the recommended baseline to run locally and in CI:
+PHP 8.3 is the recommended version for local development.
 
-```sh
-php8.3 -v
-phpize8.3
-./configure --enable-websocket --with-php-config="$(command -v php-config8.3)"
-make -j"$(getconf _NPROCESSORS_ONLN 2>/dev/null || sysctl -n hw.ncpu)"
-TEST_PHP_EXECUTABLE="$(command -v php8.3)" \
-TEST_PHP_ARGS="-d extension=$PWD/modules/websocket.so" \
-php8.3 run-tests.php -q tests
-```
+## Build
 
-If your system exposes PHP 8.3 as plain `php`, `phpize`, and `php-config`, use the same commands without the `8.3` suffix:
+```bash
+git clone https://github.com/axcherednikov/php-websocket.git
+cd php-websocket
 
-```sh
 phpize
 ./configure --enable-websocket
-make -j2
-TEST_PHP_ARGS="-d extension=$PWD/modules/websocket.so" php run-tests.php -q tests
+make
+make test
+sudo make install
 ```
 
-## Current status
+Enable the extension:
 
-The extension builds and loads, but the networking engine is not implemented yet. `listen()`, callback registration, `run()`, and Channels API methods currently establish the object lifecycle and validation surface for the next phase.
+```ini
+extension=websocket
+```
 
-The internal shape intentionally mirrors `php-eventloop`: `config.m4` detects `epoll`, `kqueue`, `poll`, and `select`; `php_websocket.h` owns the module globals and driver interface; `websocket.c` owns `MINIT`, `RINIT`, `RSHUTDOWN`, `MINFO`, and best-driver selection.
+Check that PHP can load it:
 
-The public API is split so it can serve both synchronous and asynchronous PHP:
+```bash
+php -m | grep websocket
+```
 
-- `WebSocket\Server` will own a blocking/native worker loop for direct synchronous use.
-- `WebSocket\Protocol` is stateless and does not own sockets or an event loop. Async adapters for Amp, ReactPHP, Revolt, or native PHP streams can read bytes themselves, call `Protocol::decode()` / `Protocol::unpack()`, and write bytes from `Protocol::encode()` / `Protocol::pack()`.
+With Homebrew PHP 8.3, the build usually looks like this:
 
-The protocol layer intentionally keeps production WebSocket details visible: integer opcodes, FIN/RSV/MASK/COMPRESS flags, close codes, and parsed close frames. That keeps the extension easy to adopt from existing PHP WebSocket code while still fitting normal PHP and async adapters.
+```bash
+phpize8.3
+./configure --enable-websocket --with-php-config="$(command -v php-config8.3)"
+make -j"$(sysctl -n hw.ncpu)"
+```
 
-This follows the shape used by AMPHP: async libraries own scheduling, cancellation, and sockets, while WebSocket parsing and frame construction remain replaceable implementation details.
+## Protocol Helpers
 
-Next implementation phase:
+```php
+<?php
 
-1. TCP listener and accept loop.
-2. HTTP upgrade parser.
-3. RFC 6455 text frame receive/send.
-4. `onOpen`, `onMessage`, `onClose`, and `onError` callback dispatch.
+use WebSocket\MessageType;
+use WebSocket\Protocol;
+
+$bytes = Protocol::encode('hello', MessageType::Text);
+$frame = Protocol::decode($bytes);
+
+echo $frame->payload; // hello
+```
+
+For lower-level code, `pack()` and `unpack()` expose opcode, flags, and close frames:
+
+```php
+<?php
+
+use WebSocket\CloseFrame;
+use WebSocket\Frame;
+use WebSocket\MessageType;
+use WebSocket\Protocol;
+
+$frame = new Frame(MessageType::Text, 'hel', final: false);
+$bytes = Protocol::pack($frame);
+
+$close = new CloseFrame(Protocol::CLOSE_MESSAGE_TOO_BIG, 'too big');
+$decoded = Protocol::unpack(Protocol::pack($close));
+
+echo $decoded->code; // 1009
+```
+
+## Current API
+
+`WebSocket\Protocol`:
+
+| Method | Description |
+|---|---|
+| `acceptKey(string $key): string` | Build `Sec-WebSocket-Accept` |
+| `encode(string $payload, MessageType $type = MessageType::Text, bool $masked = false): string` | Encode one complete frame |
+| `decode(string $buffer): Frame\|CloseFrame\|null` | Decode one frame, or return `null` for incomplete input |
+| `pack(string\|Frame\|CloseFrame $data, int $opcode = Protocol::OPCODE_TEXT, int $flags = Protocol::FLAG_FIN): string` | Encode one frame with raw opcode and flags |
+| `unpack(string $buffer): Frame\|CloseFrame\|null` | Decode one frame |
+
+`WebSocket\Frame` exposes `type`, `opcode`, `flags`, `payload`, `final`, and `bytesConsumed`.
+
+`WebSocket\CloseFrame` exposes `code`, `reason`, `flags`, and `bytesConsumed`.
+
+These classes are already registered, but their runtime behavior is still pending:
+
+- `WebSocket\Server`
+- `WebSocket\Connection`
+- `Channels\Server`
+- `Channels\App`
+
+## Testing
+
+```bash
+make test
+```
+
+To run tests against the built module directly:
+
+```bash
+TEST_PHP_ARGS="-d extension=$PWD/modules/websocket.so" php run-tests.php -q tests
+```
