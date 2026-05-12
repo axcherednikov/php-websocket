@@ -57,6 +57,15 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_Frame___construct, 0, 0, 2)
 	ZEND_ARG_TYPE_INFO(0, payload, IS_STRING, 0)
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, final, _IS_BOOL, 0, "true")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, bytesConsumed, IS_LONG, 0, "0")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, opcode, IS_LONG, 1, "null")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, flags, IS_LONG, 1, "null")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_CloseFrame___construct, 0, 0, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, code, IS_LONG, 0, "WebSocket\\Protocol::CLOSE_NORMAL")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, reason, IS_STRING, 0, "''")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, flags, IS_LONG, 0, "WebSocket\\Protocol::FLAG_FIN")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, bytesConsumed, IS_LONG, 0, "0")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Protocol_acceptKey, 0, 1, IS_STRING, 0)
@@ -72,6 +81,14 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_MASK_EX(arginfo_class_WebSocket_Protocol_decode, 0, 1, MAY_BE_OBJECT|MAY_BE_NULL)
 	ZEND_ARG_TYPE_INFO(0, buffer, IS_STRING, 0)
 ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Protocol_pack, 0, 1, IS_STRING, 0)
+	ZEND_ARG_TYPE_MASK(0, data, MAY_BE_STRING|MAY_BE_OBJECT, NULL)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, opcode, IS_LONG, 0, "WebSocket\\Protocol::OPCODE_TEXT")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, flags, IS_LONG, 0, "WebSocket\\Protocol::FLAG_FIN")
+ZEND_END_ARG_INFO()
+
+#define arginfo_class_WebSocket_Protocol_unpack arginfo_class_WebSocket_Protocol_decode
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_Channels_Server___construct, 0, 0, 1)
 	ZEND_ARG_TYPE_INFO(0, apps, IS_ARRAY, 0)
@@ -139,9 +156,12 @@ ZEND_METHOD(WebSocket_Connection, send);
 ZEND_METHOD(WebSocket_Connection, close);
 ZEND_METHOD(WebSocket_Connection, isOpen);
 ZEND_METHOD(WebSocket_Frame, __construct);
+ZEND_METHOD(WebSocket_CloseFrame, __construct);
 ZEND_METHOD(WebSocket_Protocol, acceptKey);
 ZEND_METHOD(WebSocket_Protocol, encode);
 ZEND_METHOD(WebSocket_Protocol, decode);
+ZEND_METHOD(WebSocket_Protocol, pack);
+ZEND_METHOD(WebSocket_Protocol, unpack);
 ZEND_METHOD(Channels_Server, __construct);
 ZEND_METHOD(Channels_Server, listen);
 ZEND_METHOD(Channels_Server, onConnection);
@@ -185,10 +205,17 @@ static const zend_function_entry class_WebSocket_Frame_methods[] = {
 	ZEND_FE_END
 };
 
+static const zend_function_entry class_WebSocket_CloseFrame_methods[] = {
+	ZEND_ME(WebSocket_CloseFrame, __construct, arginfo_class_WebSocket_CloseFrame___construct, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
 static const zend_function_entry class_WebSocket_Protocol_methods[] = {
 	ZEND_ME(WebSocket_Protocol, acceptKey, arginfo_class_WebSocket_Protocol_acceptKey, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 	ZEND_ME(WebSocket_Protocol, encode, arginfo_class_WebSocket_Protocol_encode, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 	ZEND_ME(WebSocket_Protocol, decode, arginfo_class_WebSocket_Protocol_decode, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+	ZEND_ME(WebSocket_Protocol, pack, arginfo_class_WebSocket_Protocol_pack, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
+	ZEND_ME(WebSocket_Protocol, unpack, arginfo_class_WebSocket_Protocol_unpack, ZEND_ACC_PUBLIC|ZEND_ACC_STATIC)
 	ZEND_FE_END
 };
 
@@ -247,6 +274,7 @@ static zend_class_entry *register_class_WebSocket_MessageType(void)
 {
 	zend_class_entry *class_entry = zend_register_internal_enum("WebSocket\\MessageType", IS_UNDEF, NULL);
 
+	zend_enum_add_case_cstr(class_entry, "Continuation", NULL);
 	zend_enum_add_case_cstr(class_entry, "Text", NULL);
 	zend_enum_add_case_cstr(class_entry, "Binary", NULL);
 	zend_enum_add_case_cstr(class_entry, "Ping", NULL);
@@ -261,6 +289,8 @@ static zend_class_entry *register_class_WebSocket_Frame(void)
 	zend_class_entry ce, *class_entry;
 	zend_string *property_type_class_WebSocket_MessageType;
 	zval property_type_default_value;
+	zval property_opcode_default_value;
+	zval property_flags_default_value;
 	zval property_payload_default_value;
 	zval property_final_default_value;
 	zval property_bytesConsumed_default_value;
@@ -271,6 +301,12 @@ static zend_class_entry *register_class_WebSocket_Frame(void)
 	property_type_class_WebSocket_MessageType = zend_string_init("WebSocket\\MessageType", sizeof("WebSocket\\MessageType") - 1, 1);
 	ZVAL_UNDEF(&property_type_default_value);
 	zend_declare_typed_property(class_entry, zend_string_init("type", sizeof("type") - 1, 1), &property_type_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_CLASS(property_type_class_WebSocket_MessageType, 0, 0));
+
+	ZVAL_UNDEF(&property_opcode_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("opcode", sizeof("opcode") - 1, 1), &property_opcode_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+
+	ZVAL_UNDEF(&property_flags_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("flags", sizeof("flags") - 1, 1), &property_flags_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 
 	ZVAL_UNDEF(&property_payload_default_value);
 	zend_declare_typed_property(class_entry, zend_string_init("payload", sizeof("payload") - 1, 1), &property_payload_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
@@ -284,12 +320,65 @@ static zend_class_entry *register_class_WebSocket_Frame(void)
 	return class_entry;
 }
 
+static zend_class_entry *register_class_WebSocket_CloseFrame(void)
+{
+	zend_class_entry ce, *class_entry;
+	zval property_code_default_value;
+	zval property_reason_default_value;
+	zval property_flags_default_value;
+	zval property_bytesConsumed_default_value;
+
+	INIT_NS_CLASS_ENTRY(ce, "WebSocket", "CloseFrame", class_WebSocket_CloseFrame_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL);
+
+	ZVAL_UNDEF(&property_code_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("code", sizeof("code") - 1, 1), &property_code_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+
+	ZVAL_UNDEF(&property_reason_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("reason", sizeof("reason") - 1, 1), &property_reason_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
+
+	ZVAL_UNDEF(&property_flags_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("flags", sizeof("flags") - 1, 1), &property_flags_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+
+	ZVAL_UNDEF(&property_bytesConsumed_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("bytesConsumed", sizeof("bytesConsumed") - 1, 1), &property_bytesConsumed_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+
+	return class_entry;
+}
+
 static zend_class_entry *register_class_WebSocket_Protocol(void)
 {
 	zend_class_entry ce, *class_entry;
 
 	INIT_NS_CLASS_ENTRY(ce, "WebSocket", "Protocol", class_WebSocket_Protocol_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL);
+
+	zend_declare_class_constant_long(class_entry, "OPCODE_CONTINUATION", sizeof("OPCODE_CONTINUATION") - 1, 0x0);
+	zend_declare_class_constant_long(class_entry, "OPCODE_TEXT", sizeof("OPCODE_TEXT") - 1, 0x1);
+	zend_declare_class_constant_long(class_entry, "OPCODE_BINARY", sizeof("OPCODE_BINARY") - 1, 0x2);
+	zend_declare_class_constant_long(class_entry, "OPCODE_CLOSE", sizeof("OPCODE_CLOSE") - 1, 0x8);
+	zend_declare_class_constant_long(class_entry, "OPCODE_PING", sizeof("OPCODE_PING") - 1, 0x9);
+	zend_declare_class_constant_long(class_entry, "OPCODE_PONG", sizeof("OPCODE_PONG") - 1, 0xA);
+
+	zend_declare_class_constant_long(class_entry, "FLAG_FIN", sizeof("FLAG_FIN") - 1, 1 << 0);
+	zend_declare_class_constant_long(class_entry, "FLAG_COMPRESS", sizeof("FLAG_COMPRESS") - 1, 1 << 1);
+	zend_declare_class_constant_long(class_entry, "FLAG_RSV1", sizeof("FLAG_RSV1") - 1, 1 << 2);
+	zend_declare_class_constant_long(class_entry, "FLAG_RSV2", sizeof("FLAG_RSV2") - 1, 1 << 3);
+	zend_declare_class_constant_long(class_entry, "FLAG_RSV3", sizeof("FLAG_RSV3") - 1, 1 << 4);
+	zend_declare_class_constant_long(class_entry, "FLAG_MASK", sizeof("FLAG_MASK") - 1, 1 << 5);
+
+	zend_declare_class_constant_long(class_entry, "CLOSE_NORMAL", sizeof("CLOSE_NORMAL") - 1, 1000);
+	zend_declare_class_constant_long(class_entry, "CLOSE_GOING_AWAY", sizeof("CLOSE_GOING_AWAY") - 1, 1001);
+	zend_declare_class_constant_long(class_entry, "CLOSE_PROTOCOL_ERROR", sizeof("CLOSE_PROTOCOL_ERROR") - 1, 1002);
+	zend_declare_class_constant_long(class_entry, "CLOSE_UNSUPPORTED_DATA", sizeof("CLOSE_UNSUPPORTED_DATA") - 1, 1003);
+	zend_declare_class_constant_long(class_entry, "CLOSE_NO_STATUS", sizeof("CLOSE_NO_STATUS") - 1, 1005);
+	zend_declare_class_constant_long(class_entry, "CLOSE_ABNORMAL", sizeof("CLOSE_ABNORMAL") - 1, 1006);
+	zend_declare_class_constant_long(class_entry, "CLOSE_INVALID_PAYLOAD", sizeof("CLOSE_INVALID_PAYLOAD") - 1, 1007);
+	zend_declare_class_constant_long(class_entry, "CLOSE_POLICY_VIOLATION", sizeof("CLOSE_POLICY_VIOLATION") - 1, 1008);
+	zend_declare_class_constant_long(class_entry, "CLOSE_MESSAGE_TOO_BIG", sizeof("CLOSE_MESSAGE_TOO_BIG") - 1, 1009);
+	zend_declare_class_constant_long(class_entry, "CLOSE_EXTENSION_MISSING", sizeof("CLOSE_EXTENSION_MISSING") - 1, 1010);
+	zend_declare_class_constant_long(class_entry, "CLOSE_SERVER_ERROR", sizeof("CLOSE_SERVER_ERROR") - 1, 1011);
+	zend_declare_class_constant_long(class_entry, "CLOSE_TLS", sizeof("CLOSE_TLS") - 1, 1015);
 
 	return class_entry;
 }

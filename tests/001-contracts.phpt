@@ -8,6 +8,7 @@ var_dump(class_exists(WebSocket\Server::class));
 var_dump(class_exists(WebSocket\Connection::class));
 var_dump(enum_exists(WebSocket\MessageType::class));
 var_dump(class_exists(WebSocket\Frame::class));
+var_dump(class_exists(WebSocket\CloseFrame::class));
 var_dump(class_exists(WebSocket\Protocol::class));
 var_dump(class_exists(Channels\Server::class));
 var_dump(class_exists(Channels\App::class));
@@ -29,6 +30,7 @@ $channels->onClientEvent(static function () {});
 var_dump($channels->trigger('public-chat', 'message', ['ok' => true]) instanceof stdClass);
 ?>
 --EXPECT--
+bool(true)
 bool(true)
 bool(true)
 bool(true)

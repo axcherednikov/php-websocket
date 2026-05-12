@@ -9,6 +9,7 @@ zend_class_entry *websocket_server_ce;
 zend_class_entry *websocket_connection_ce;
 zend_class_entry *websocket_message_type_ce;
 zend_class_entry *websocket_frame_ce;
+zend_class_entry *websocket_close_frame_ce;
 zend_class_entry *websocket_protocol_ce;
 zend_class_entry *channels_app_ce;
 zend_class_entry *channels_server_ce;

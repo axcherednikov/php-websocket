@@ -85,6 +85,7 @@ extern zend_class_entry *websocket_server_ce;
 extern zend_class_entry *websocket_connection_ce;
 extern zend_class_entry *websocket_message_type_ce;
 extern zend_class_entry *websocket_frame_ce;
+extern zend_class_entry *websocket_close_frame_ce;
 extern zend_class_entry *websocket_protocol_ce;
 extern zend_class_entry *channels_app_ce;
 extern zend_class_entry *channels_server_ce;
