@@ -178,6 +178,22 @@ Read-only properties:
 | `Pong` | Pong control frame |
 | `Close` | Close control frame |
 
+## Benchmarks
+
+**Environment:** PHP 8.3.31, `zend.assertions=-1`, Apple Silicon macOS, 100,000 iterations for 64B payloads and 20,000 iterations for 1024B payloads. Results from May 14, 2026.
+AMPHP WebSocket Server v4.0.0, Ratchet v0.4.0, and Workerman v5.2.0 were installed from Composer. OpenSwoole v26.2.0 was installed from PECL.
+
+| Benchmark | amphp/websocket-server | ratchet/rfc6455 | workerman/workerman | openswoole | ext-websocket |
+|---|--:|--:|--:|--:|--:|
+| `encode text 64B` | 3,086,015 ops/sec | 1,516,834 ops/sec | 4,515,106 ops/sec | 7,883,119 ops/sec | **13,941,734 ops/sec** |
+| `decode masked text 64B` | 606,358 ops/sec | 569,765 ops/sec | 1,657,240 ops/sec | **4,151,983 ops/sec** | 3,003,172 ops/sec |
+| `encode text 1024B` | 2,508,768 ops/sec | 1,341,775 ops/sec | 3,598,605 ops/sec | 6,218,503 ops/sec | **11,459,952 ops/sec** |
+| `decode masked text 1024B` | 361,919 ops/sec | 271,721 ops/sec | 817,038 ops/sec | **3,758,780 ops/sec** | 1,405,572 ops/sec |
+
+> These benchmarks measure RFC 6455 frame encode/decode throughput. Full socket/server load tests should be added once the native server runtime accepts real connections.
+>
+> **[Run the benchmarks yourself ->](bench/)**
+
 ## Testing
 
 ```bash

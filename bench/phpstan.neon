@@ -1,0 +1,16 @@
+includes:
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+
+parameters:
+    level: 9
+    scanFiles:
+        - ../websocket.stub.php
+        - stubs/openswoole.stub.php
+    paths:
+        - bench.php
+        - bench_amphp.php
+        - bench_openswoole.php
+        - bench_ratchet.php
+        - bench_websocket.php
+        - bench_workerman.php
+    tmpDir: var/phpstan
