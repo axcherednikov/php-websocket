@@ -59,42 +59,16 @@ typedef struct _websocket_connection_object {
 	bool open;
 } websocket_connection_object;
 
-typedef struct _channels_app_object {
-	zend_object std;
-	zend_string *key;
-	zend_string *secret;
-	zend_string *id;
-	zval options;
-} channels_app_object;
-
-typedef struct _channels_server_object {
-	zend_object std;
-	zval apps;
-	zval options;
-	zval on_connection;
-	zval on_subscribe;
-	zval on_unsubscribe;
-	zval on_client_event;
-	zend_string *host;
-	zend_long port;
-	bool listening;
-	bool running;
-} channels_server_object;
-
 extern zend_class_entry *websocket_server_ce;
 extern zend_class_entry *websocket_connection_ce;
 extern zend_class_entry *websocket_message_type_ce;
 extern zend_class_entry *websocket_frame_ce;
 extern zend_class_entry *websocket_close_frame_ce;
 extern zend_class_entry *websocket_protocol_ce;
-extern zend_class_entry *channels_app_ce;
-extern zend_class_entry *channels_server_ce;
 
 void websocket_register_server_class(void);
 void websocket_register_connection_class(void);
 void websocket_register_protocol_classes(void);
-void websocket_register_channels_app_class(void);
-void websocket_register_channels_server_class(void);
 
 websocket_driver *websocket_driver_select_get(void);
 #ifdef HAVE_WEBSOCKET_POLL
@@ -112,8 +86,6 @@ const char *websocket_best_driver_name(void);
 
 websocket_server_object *websocket_server_from_obj(zend_object *obj);
 websocket_connection_object *websocket_connection_from_obj(zend_object *obj);
-channels_app_object *channels_app_from_obj(zend_object *obj);
-channels_server_object *channels_server_from_obj(zend_object *obj);
 
 static zend_always_inline websocket_server_object *Z_WEBSOCKET_SERVER_P(zval *zv)
 {
@@ -123,16 +95,6 @@ static zend_always_inline websocket_server_object *Z_WEBSOCKET_SERVER_P(zval *zv
 static zend_always_inline websocket_connection_object *Z_WEBSOCKET_CONNECTION_P(zval *zv)
 {
 	return websocket_connection_from_obj(Z_OBJ_P(zv));
-}
-
-static zend_always_inline channels_app_object *Z_CHANNELS_APP_P(zval *zv)
-{
-	return channels_app_from_obj(Z_OBJ_P(zv));
-}
-
-static zend_always_inline channels_server_object *Z_CHANNELS_SERVER_P(zval *zv)
-{
-	return channels_server_from_obj(Z_OBJ_P(zv));
 }
 
 #endif

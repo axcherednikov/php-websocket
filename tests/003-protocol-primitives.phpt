@@ -20,9 +20,6 @@ var_dump($partial->opcode);
 var_dump($partial->flags);
 var_dump(bin2hex(Protocol::pack($partial)));
 
-$flagsWin = new Frame(MessageType::Text, 'ok', true, 0, null, 0);
-var_dump($flagsWin->final);
-
 $frame = Protocol::unpack(Protocol::pack('hi', Protocol::OPCODE_BINARY, Protocol::FLAG_FIN | Protocol::FLAG_MASK));
 var_dump($frame instanceof Frame);
 var_dump($frame->type === MessageType::Binary);
@@ -66,7 +63,6 @@ int(1009)
 int(1)
 int(0)
 string(10) "010368656c"
-bool(false)
 bool(true)
 bool(true)
 int(2)

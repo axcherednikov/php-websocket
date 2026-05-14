@@ -214,51 +214,31 @@ PHP_METHOD(WebSocket_Frame, __construct)
 	zval *type;
 	zend_string *payload;
 	bool final = true;
-	zend_long bytes_consumed = 0;
-	zend_long opcode = -1;
-	zend_long flags = -1;
-	zval *opcode_zv = NULL;
-	zval *flags_zv = NULL;
+	zend_long opcode;
+	zend_long flags;
 
-	ZEND_PARSE_PARAMETERS_START(2, 6)
+	ZEND_PARSE_PARAMETERS_START(2, 3)
 		Z_PARAM_OBJECT_OF_CLASS(type, websocket_message_type_ce)
 		Z_PARAM_STR(payload)
 		Z_PARAM_OPTIONAL
 		Z_PARAM_BOOL(final)
-		Z_PARAM_LONG(bytes_consumed)
-		Z_PARAM_ZVAL_OR_NULL(opcode_zv)
-		Z_PARAM_ZVAL_OR_NULL(flags_zv)
 	ZEND_PARSE_PARAMETERS_END();
 
-	if (opcode_zv && Z_TYPE_P(opcode_zv) != IS_NULL) {
-		opcode = zval_get_long(opcode_zv);
-	} else {
-		opcode = websocket_message_type_opcode(type);
-	}
+	opcode = websocket_message_type_opcode(type);
+	flags = final ? WEBSOCKET_FLAG_FIN : 0;
 
-	if (flags_zv && Z_TYPE_P(flags_zv) != IS_NULL) {
-		flags = zval_get_long(flags_zv) & WEBSOCKET_FLAGS_ALL;
-		final = (flags & WEBSOCKET_FLAG_FIN) != 0;
-	} else {
-		flags = final ? WEBSOCKET_FLAG_FIN : 0;
-	}
-
-	websocket_frame_update_properties(ZEND_THIS, type, payload, final, bytes_consumed, opcode, flags);
+	websocket_frame_update_properties(ZEND_THIS, type, payload, final, 0, opcode, flags);
 }
 
 PHP_METHOD(WebSocket_CloseFrame, __construct)
 {
 	zend_long code = WEBSOCKET_CLOSE_NORMAL;
 	zend_string *reason = NULL;
-	zend_long flags = WEBSOCKET_FLAG_FIN;
-	zend_long bytes_consumed = 0;
 
-	ZEND_PARSE_PARAMETERS_START(0, 4)
+	ZEND_PARSE_PARAMETERS_START(0, 2)
 		Z_PARAM_OPTIONAL
 		Z_PARAM_LONG(code)
 		Z_PARAM_STR(reason)
-		Z_PARAM_LONG(flags)
-		Z_PARAM_LONG(bytes_consumed)
 	ZEND_PARSE_PARAMETERS_END();
 
 	if (!reason) {
@@ -269,7 +249,7 @@ PHP_METHOD(WebSocket_CloseFrame, __construct)
 		RETURN_THROWS();
 	}
 
-	websocket_close_frame_update_properties(ZEND_THIS, code, reason, flags & WEBSOCKET_FLAGS_ALL, bytes_consumed);
+	websocket_close_frame_update_properties(ZEND_THIS, code, reason, WEBSOCKET_FLAG_FIN, 0);
 }
 
 PHP_METHOD(WebSocket_Protocol, acceptKey)

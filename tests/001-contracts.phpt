@@ -1,5 +1,5 @@
 --TEST--
-websocket extension exposes initial public contracts
+websocket extension exposes focused public contracts
 --EXTENSIONS--
 websocket
 --FILE--
@@ -10,8 +10,11 @@ var_dump(enum_exists(WebSocket\MessageType::class));
 var_dump(class_exists(WebSocket\Frame::class));
 var_dump(class_exists(WebSocket\CloseFrame::class));
 var_dump(class_exists(WebSocket\Protocol::class));
-var_dump(class_exists(Channels\Server::class));
-var_dump(class_exists(Channels\App::class));
+var_dump(method_exists(WebSocket\Server::class, 'send'));
+var_dump(method_exists(WebSocket\Server::class, 'close'));
+var_dump((new ReflectionMethod(WebSocket\Connection::class, 'send'))->getNumberOfParameters());
+var_dump((new ReflectionMethod(WebSocket\Frame::class, '__construct'))->getNumberOfParameters());
+var_dump((new ReflectionMethod(WebSocket\CloseFrame::class, '__construct'))->getNumberOfParameters());
 
 $server = new WebSocket\Server();
 $server->listen('127.0.0.1', 8080);
@@ -20,14 +23,6 @@ $server->onMessage(static function () {});
 $server->onClose(static function () {});
 $server->onError(static function () {});
 var_dump(in_array($server->getDriver(), ['kqueue', 'epoll', 'poll', 'select'], true));
-
-$channels = new Channels\Server([new Channels\App('key', 'secret', '1')]);
-$channels->listen('127.0.0.1', 8081);
-$channels->onConnection(static function () {});
-$channels->onSubscribe(static function () {});
-$channels->onUnsubscribe(static function () {});
-$channels->onClientEvent(static function () {});
-var_dump($channels->trigger('public-chat', 'message', ['ok' => true]) instanceof stdClass);
 ?>
 --EXPECT--
 bool(true)
@@ -36,7 +31,9 @@ bool(true)
 bool(true)
 bool(true)
 bool(true)
-bool(true)
-bool(true)
-bool(true)
+bool(false)
+bool(false)
+int(2)
+int(3)
+int(2)
 bool(true)

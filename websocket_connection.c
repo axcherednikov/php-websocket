@@ -64,10 +64,13 @@ static zval *websocket_connection_read_property(zend_object *object, zend_string
 PHP_METHOD(WebSocket_Connection, send)
 {
 	zend_string *payload;
+	zval *type = NULL;
 	websocket_connection_object *intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
 
-	ZEND_PARSE_PARAMETERS_START(1, 1)
+	ZEND_PARSE_PARAMETERS_START(1, 2)
 		Z_PARAM_STR(payload)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_OBJECT_OF_CLASS(type, websocket_message_type_ce)
 	ZEND_PARSE_PARAMETERS_END();
 
 	if (!intern->open) {

@@ -145,46 +145,6 @@ PHP_METHOD(WebSocket_Server, onError)
 	websocket_server_store_closure(&Z_WEBSOCKET_SERVER_P(ZEND_THIS)->on_error, handler);
 }
 
-PHP_METHOD(WebSocket_Server, send)
-{
-	zval *connection;
-	zend_string *payload;
-	zval *type = NULL;
-
-	ZEND_PARSE_PARAMETERS_START(2, 3)
-		Z_PARAM_OBJECT_OF_CLASS(connection, websocket_connection_ce)
-		Z_PARAM_STR(payload)
-		Z_PARAM_OPTIONAL
-		Z_PARAM_OBJECT_OF_CLASS(type, websocket_message_type_ce)
-	ZEND_PARSE_PARAMETERS_END();
-
-	if (!Z_WEBSOCKET_CONNECTION_P(connection)->open) {
-		zend_throw_error(NULL, "Cannot send on a closed WebSocket connection");
-		RETURN_THROWS();
-	}
-}
-
-PHP_METHOD(WebSocket_Server, close)
-{
-	zval *connection;
-	zend_long code = 1000;
-	zend_string *reason;
-
-	ZEND_PARSE_PARAMETERS_START(1, 3)
-		Z_PARAM_OBJECT_OF_CLASS(connection, websocket_connection_ce)
-		Z_PARAM_OPTIONAL
-		Z_PARAM_LONG(code)
-		Z_PARAM_STR(reason)
-	ZEND_PARSE_PARAMETERS_END();
-
-	if (code < 1000 || code > 4999) {
-		zend_argument_value_error(2, "must be between 1000 and 4999");
-		RETURN_THROWS();
-	}
-
-	Z_WEBSOCKET_CONNECTION_P(connection)->open = false;
-}
-
 PHP_METHOD(WebSocket_Server, run)
 {
 	websocket_server_object *intern = Z_WEBSOCKET_SERVER_P(ZEND_THIS);

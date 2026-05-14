@@ -1,7 +1,7 @@
 PHP_ARG_ENABLE([websocket],
   [whether to enable native websocket support],
   [AS_HELP_STRING([--enable-websocket],
-    [Enable native WebSocket/Channels extension])],
+    [Enable native WebSocket extension])],
   [no])
 
 if test "$PHP_WEBSOCKET" != "no"; then
@@ -19,7 +19,7 @@ if test "$PHP_WEBSOCKET" != "no"; then
     AC_DEFINE([HAVE_WEBSOCKET_POLL], [1], [Have poll support])
   ])
 
-  WEBSOCKET_SOURCES="websocket.c websocket_server.c websocket_connection.c websocket_protocol.c channels_app.c channels_server.c drivers/select.c"
+  WEBSOCKET_SOURCES="websocket.c websocket_server.c websocket_connection.c websocket_protocol.c drivers/select.c"
 
   if test "$ac_cv_header_poll_h" = "yes"; then
     WEBSOCKET_SOURCES="$WEBSOCKET_SOURCES drivers/poll.c"

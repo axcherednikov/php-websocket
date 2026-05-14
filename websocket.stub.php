@@ -16,10 +16,6 @@ final class Server
 
     public function onError(\Closure $handler): void {}
 
-    public function send(Connection $connection, string $payload, MessageType $type = MessageType::Text): void {}
-
-    public function close(Connection $connection, int $code = 1000, string $reason = ''): void {}
-
     public function run(): void {}
 
     public function stop(): void {}
@@ -33,7 +29,7 @@ final class Connection
 
     public readonly string $remoteAddress;
 
-    public function send(string $payload): void {}
+    public function send(string $payload, MessageType $type = MessageType::Text): void {}
 
     public function close(int $code = 1000, string $reason = ''): void {}
 
@@ -64,7 +60,7 @@ final class Frame
 
     public readonly int $bytesConsumed;
 
-    public function __construct(MessageType $type, string $payload, bool $final = true, int $bytesConsumed = 0, ?int $opcode = null, ?int $flags = null) {}
+    public function __construct(MessageType $type, string $payload, bool $final = true) {}
 }
 
 final class CloseFrame
@@ -77,7 +73,7 @@ final class CloseFrame
 
     public readonly int $bytesConsumed;
 
-    public function __construct(int $code = Protocol::CLOSE_NORMAL, string $reason = '', int $flags = Protocol::FLAG_FIN, int $bytesConsumed = 0) {}
+    public function __construct(int $code = Protocol::CLOSE_NORMAL, string $reason = '') {}
 }
 
 final class Protocol
@@ -118,42 +114,4 @@ final class Protocol
     public static function pack(string|Frame|CloseFrame $data, int $opcode = self::OPCODE_TEXT, int $flags = self::FLAG_FIN): string {}
 
     public static function unpack(string $buffer): Frame|CloseFrame|null {}
-}
-
-namespace Channels;
-
-final class Server
-{
-    public function __construct(array $apps, array $options = []) {}
-
-    public function listen(string $host, int $port): void {}
-
-    public function onConnection(\Closure $handler): void {}
-
-    public function onSubscribe(\Closure $handler): void {}
-
-    public function onUnsubscribe(\Closure $handler): void {}
-
-    public function onClientEvent(\Closure $handler): void {}
-
-    public function trigger(string|array $channels, string $event, mixed $data, array $params = [], bool $alreadyEncoded = false): object {}
-
-    public function triggerBatch(array $batch = [], bool $alreadyEncoded = false): object {}
-
-    public function getChannelInfo(string $channel, array $params = []): object {}
-
-    public function getChannels(array $params = []): object {}
-
-    public function getPresenceUsers(string $channel): object {}
-
-    public function terminateUserConnections(string $userId): object {}
-
-    public function run(): void {}
-
-    public function stop(): void {}
-}
-
-final class App
-{
-    public function __construct(string $key, string $secret, string $id, array $options = []) {}
 }
