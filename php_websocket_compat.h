@@ -30,4 +30,13 @@ static inline zend_class_entry *zend_register_internal_class_with_flags(
 	/* not available before PHP 8.3 */
 #endif
 
+static inline const char *websocket_zval_value_name(const zval *value)
+{
+#if PHP_VERSION_ID >= 80300
+	return zend_zval_value_name(value);
+#else
+	return zend_zval_type_name(value);
+#endif
+}
+
 #endif /* PHP_WEBSOCKET_COMPAT_H */
