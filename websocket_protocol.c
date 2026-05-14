@@ -348,7 +348,7 @@ PHP_METHOD(WebSocket_Protocol, pack)
 		flags = zval_get_long(prop);
 		opcode = WEBSOCKET_OPCODE_CLOSE;
 	} else {
-		zend_argument_type_error(1, "must be of type string|WebSocket\\Frame|WebSocket\\CloseFrame, %s given", zend_zval_value_name(data));
+		zend_argument_type_error(1, "must be of type string|WebSocket\\Frame|WebSocket\\CloseFrame, %s given", websocket_zval_value_name(data));
 		RETURN_THROWS();
 	}
 
