@@ -3,6 +3,8 @@
 autom4te.cache/
 build/
 modules/
+bench/var/
+bench/vendor/
 
 *.dep
 *.la
