@@ -5,6 +5,7 @@ build/
 modules/
 bench/var/
 bench/vendor/
+compile_commands.json
 
 *.dep
 *.la

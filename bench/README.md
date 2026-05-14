@@ -19,10 +19,10 @@ AMPHP WebSocket Server v4.0.0, Ratchet v0.4.0, and Workerman v5.2.0 were install
 
 | Benchmark | amphp/websocket-server | ratchet/rfc6455 | workerman/workerman | openswoole | ext-websocket |
 |---|--:|--:|--:|--:|--:|
-| `encode text 64B` | 3,086,015 ops/sec | 1,516,834 ops/sec | 4,515,106 ops/sec | 7,883,119 ops/sec | **13,941,734 ops/sec** |
-| `decode masked text 64B` | 606,358 ops/sec | 569,765 ops/sec | 1,657,240 ops/sec | **4,151,983 ops/sec** | 3,003,172 ops/sec |
-| `encode text 1024B` | 2,508,768 ops/sec | 1,341,775 ops/sec | 3,598,605 ops/sec | 6,218,503 ops/sec | **11,459,952 ops/sec** |
-| `decode masked text 1024B` | 361,919 ops/sec | 271,721 ops/sec | 817,038 ops/sec | **3,758,780 ops/sec** | 1,405,572 ops/sec |
+| `encode text 64B` | 3,091,927 ops/sec | 1,495,896 ops/sec | 2,740,039 ops/sec | 7,613,850 ops/sec | **13,863,296 ops/sec** |
+| `decode masked text 64B` | 605,068 ops/sec | 568,839 ops/sec | 1,639,640 ops/sec | 4,171,098 ops/sec | **7,080,043 ops/sec** |
+| `encode text 1024B` | 2,495,412 ops/sec | 1,327,041 ops/sec | 3,558,508 ops/sec | 6,403,416 ops/sec | **11,334,123 ops/sec** |
+| `decode masked text 1024B` | 362,809 ops/sec | 270,385 ops/sec | 818,987 ops/sec | 3,658,342 ops/sec | **5,000,625 ops/sec** |
 
 ## Install Dependencies
 
