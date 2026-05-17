@@ -8,7 +8,7 @@ use Workerman\Protocols\Websocket;
 
 ini_set('memory_limit', '512M');
 
-require __DIR__ . '/vendor/autoload.php';
+require dirname(__DIR__) . '/vendor/autoload.php';
 
 $connection = makeWorkermanConnection();
 $adapterName = 'workerman/workerman';
@@ -22,7 +22,7 @@ $decode = static function (string $frame) use ($connection): string {
     return Websocket::decode($frame, $connection);
 };
 
-require __DIR__ . '/bench.php';
+require __DIR__ . '/common.php';
 runBenchmarkSuite($adapterName, $adapterVersion, $encode, $decode);
 
 function makeWorkermanConnection(): TcpConnection

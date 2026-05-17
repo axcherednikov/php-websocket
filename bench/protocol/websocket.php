@@ -9,14 +9,14 @@ ini_set('memory_limit', '512M');
 
 if (!extension_loaded('websocket')) {
     fwrite(STDERR, "The websocket extension is not loaded.\n");
-    fwrite(STDERR, "Run with: php -d extension=\"\$PWD/modules/websocket.so\" bench/bench_websocket.php\n");
+    fwrite(STDERR, "Run with: php -d extension=\"\$PWD/modules/websocket.so\" bench/protocol/websocket.php\n");
     exit(1);
 }
 
 $adapterName = 'ext-websocket';
 $websocketVersion = phpversion('websocket');
 $adapterVersion = $websocketVersion !== false ? $websocketVersion : 'loaded';
-$encode = static fn (string $payload): string => Protocol::encode($payload, MessageType::Text);
+$encode = static fn (string $payload): string => Protocol::encode($payload);
 $decode = static function (string $frame): string {
     $decoded = Protocol::decode($frame);
     if (!$decoded instanceof WebSocket\Frame) {
@@ -26,5 +26,5 @@ $decode = static function (string $frame): string {
     return $decoded->payload;
 };
 
-require __DIR__ . '/bench.php';
+require __DIR__ . '/common.php';
 runBenchmarkSuite($adapterName, $adapterVersion, $encode, $decode);

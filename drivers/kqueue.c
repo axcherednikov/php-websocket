@@ -6,26 +6,103 @@
 
 #ifdef HAVE_WEBSOCKET_KQUEUE
 
+#include <errno.h>
+#include <sys/event.h>
+#include <time.h>
+#include <unistd.h>
+
+static int kqueue_fd = -1;
+
 static int websocket_kqueue_init(void)
 {
+	kqueue_fd = kqueue();
+	if (kqueue_fd < 0) {
+		return FAILURE;
+	}
+
 	return SUCCESS;
 }
 
 static void websocket_kqueue_shutdown(void)
 {
+	if (kqueue_fd >= 0) {
+		while (close(kqueue_fd) < 0 && errno == EINTR) {
+		}
+		kqueue_fd = -1;
+	}
 }
 
-static int websocket_kqueue_poll(double timeout)
+static int websocket_kqueue_watch_read(const int fd)
 {
-	(void) timeout;
-	return 0;
+	struct kevent event;
+
+	if (kqueue_fd < 0) {
+		errno = EBADF;
+		return FAILURE;
+	}
+
+	EV_SET(&event, (uintptr_t) fd, EVFILT_READ, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, NULL);
+
+	while (kevent(kqueue_fd, &event, 1, NULL, 0, NULL) < 0) {
+		if (errno == EINTR) {
+			continue;
+		}
+
+		return FAILURE;
+	}
+
+	return SUCCESS;
+}
+
+static void websocket_kqueue_unwatch(const int fd)
+{
+	struct kevent event;
+	const int saved_errno = errno;
+
+	if (kqueue_fd < 0) {
+		return;
+	}
+
+	EV_SET(&event, (uintptr_t) fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+	while (kevent(kqueue_fd, &event, 1, NULL, 0, NULL) < 0 && errno == EINTR) {
+	}
+
+	errno = saved_errno;
+}
+
+static int websocket_kqueue_wait(const int timeout_usec)
+{
+	struct kevent event;
+	struct timespec timeout;
+
+	if (kqueue_fd < 0) {
+		errno = EBADF;
+		return -1;
+	}
+
+	timeout.tv_sec = timeout_usec / 1000000;
+	timeout.tv_nsec = (timeout_usec % 1000000) * 1000;
+
+	const int ready = kevent(kqueue_fd, NULL, 0, &event, 1, &timeout);
+	if (ready < 0) {
+		return -1;
+	}
+
+	if (ready > 0 && (event.flags & EV_ERROR) != 0) {
+		errno = event.data != 0 ? (int) event.data : EIO;
+		return -1;
+	}
+
+	return ready;
 }
 
 static websocket_driver kqueue_driver = {
 	"kqueue",
 	websocket_kqueue_init,
 	websocket_kqueue_shutdown,
-	websocket_kqueue_poll,
+	websocket_kqueue_watch_read,
+	websocket_kqueue_unwatch,
+	websocket_kqueue_wait,
 };
 
 websocket_driver *websocket_driver_kqueue_get(void)

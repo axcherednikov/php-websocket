@@ -15,7 +15,7 @@ foreach ([OpenSwoole\WebSocket\Server::class, Swoole\WebSocket\Server::class] as
 if ($serverClass === null) {
     fwrite(STDERR, "OpenSwoole WebSocket Server is not available.\n");
     fwrite(STDERR, "Install and enable ext-openswoole, then run this benchmark again.\n");
-    fwrite(STDERR, "Example: pecl install openswoole && php -d extension=openswoole bench/bench_openswoole.php\n");
+    fwrite(STDERR, "Example: pecl install openswoole && php -d extension=openswoole bench/protocol/openswoole.php\n");
     exit(1);
 }
 
@@ -35,7 +35,7 @@ $decode = static function (string $frame) use ($serverClass): string {
     return $decoded->data;
 };
 
-require __DIR__ . '/bench.php';
+require __DIR__ . '/common.php';
 runBenchmarkSuite($adapterName, $adapterVersion, $encode, $decode);
 
 function websocketServerConstant(string $class, string $classConstant, string $globalConstant, int $fallback): int
