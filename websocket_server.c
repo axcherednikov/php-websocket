@@ -7,6 +7,8 @@
 #include "php_websocket_compat.h"
 #include "websocket_arginfo.h"
 
+#include <string.h>
+
 static zend_object_handlers websocket_server_handlers;
 
 websocket_server_object *websocket_server_from_obj(zend_object *obj)
@@ -26,10 +28,18 @@ static zend_object *websocket_server_create_object(zend_class_entry *ce)
 	ZVAL_UNDEF(&intern->on_message);
 	ZVAL_UNDEF(&intern->on_close);
 	ZVAL_UNDEF(&intern->on_error);
+	memset(&intern->on_open_cache, 0, sizeof(intern->on_open_cache));
+	intern->on_open_param_count = 1;
+	intern->on_open_cache_initialized = false;
 	intern->host = NULL;
 	intern->port = 0;
 	intern->listening = false;
 	intern->running = false;
+	intern->listener_fd = -1;
+	ZVAL_UNDEF(&intern->reusable_connection);
+	intern->connections = NULL;
+	intern->connection_count = 0;
+	intern->connection_capacity = 0;
 
 	intern->std.handlers = &websocket_server_handlers;
 
@@ -45,6 +55,8 @@ static void websocket_server_free_object(zend_object *object)
 	zval_ptr_dtor(&intern->on_message);
 	zval_ptr_dtor(&intern->on_close);
 	zval_ptr_dtor(&intern->on_error);
+
+	websocket_server_runtime_free(intern);
 
 	if (intern->host) {
 		zend_string_release(intern->host);
@@ -91,6 +103,10 @@ PHP_METHOD(WebSocket_Server, listen)
 		zend_argument_value_error(2, "must be between 1 and 65535");
 		RETURN_THROWS();
 	}
+	if (strlen(ZSTR_VAL(host)) != ZSTR_LEN(host)) {
+		zend_argument_value_error(1, "must not contain null bytes");
+		RETURN_THROWS();
+	}
 
 	if (intern->host) {
 		zend_string_release(intern->host);
@@ -104,12 +120,21 @@ PHP_METHOD(WebSocket_Server, listen)
 PHP_METHOD(WebSocket_Server, onOpen)
 {
 	zval *handler;
+	websocket_server_object *intern = Z_WEBSOCKET_SERVER_P(ZEND_THIS);
+	const zend_function *function;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
 		Z_PARAM_OBJECT_OF_CLASS(handler, zend_ce_closure)
 	ZEND_PARSE_PARAMETERS_END();
 
-	websocket_server_store_closure(&Z_WEBSOCKET_SERVER_P(ZEND_THIS)->on_open, handler);
+	websocket_server_store_closure(&intern->on_open, handler);
+	function = zend_get_closure_method_def(Z_OBJ_P(handler));
+	intern->on_open_param_count = function && function->common.num_args == 0 && (function->common.fn_flags & ZEND_ACC_VARIADIC) == 0 ? 0 : 1;
+	intern->on_open_cache.function_handler = (zend_function *) function;
+	intern->on_open_cache.calling_scope = NULL;
+	intern->on_open_cache.called_scope = Z_OBJCE_P(handler);
+	intern->on_open_cache.object = Z_OBJ_P(handler);
+	intern->on_open_cache_initialized = function != NULL;
 }
 
 PHP_METHOD(WebSocket_Server, onMessage)
@@ -173,9 +198,13 @@ PHP_METHOD(WebSocket_Server, run)
 	WEBSOCKET_G(stopped) = false;
 	intern->running = true;
 
-	/* Phase 1 will replace this placeholder with listener accept/poll. */
+	(void) websocket_server_runtime_run(intern);
 	intern->running = false;
 	WEBSOCKET_G(running) = false;
+
+	if (EG(exception)) {
+		RETURN_THROWS();
+	}
 }
 
 PHP_METHOD(WebSocket_Server, stop)

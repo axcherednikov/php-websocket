@@ -2,7 +2,7 @@
 
 Native WebSocket extension for PHP.
 
-The project is at `0.1.0`: the extension builds, registers the public PHP API, and contains the first native RFC 6455 protocol helpers. The WebSocket server runtime is not implemented yet.
+The project is at `0.3.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first TCP server runtime. WebSocket upgrade and message processing are still in progress.
 
 The goal is to keep the WebSocket protocol work in C and expose a small PHP API that can be used from normal PHP code, async runtimes, and the native server runtime that will live in this extension.
 
@@ -86,23 +86,23 @@ The public API lives in the `WebSocket` namespace.
 
 ### `Server`
 
-`WebSocket\Server` is the future native server runtime. The class is registered now so the API can settle before the socket loop is implemented.
+`WebSocket\Server` is the native server runtime. It currently accepts TCP connections and exposes the lifecycle callbacks; WebSocket upgrade and message processing are still in progress.
 
 | Method | Description |
 |---|---|
 | `__construct(array $options = [])` | Create a server instance with optional runtime options |
 | `listen(string $host, int $port): void` | Store the address the server should bind to |
-| `onOpen(Closure $handler): void` | Register a callback for accepted WebSocket connections |
+| `onOpen(Closure $handler): void` | Register a callback for accepted WebSocket connections; returning `false` closes the connection immediately |
 | `onMessage(Closure $handler): void` | Register a callback for received messages |
 | `onClose(Closure $handler): void` | Register a callback for closed connections |
 | `onError(Closure $handler): void` | Register a callback for runtime errors |
-| `run(): void` | Start the server loop; currently validates the configured state |
+| `run(): void` | Start the native TCP accept loop |
 | `stop(): void` | Request server shutdown |
 | `getDriver(): string` | Return the selected native I/O driver name |
 
 ### `Connection`
 
-`WebSocket\Connection` represents one client connection once the server runtime is implemented.
+`WebSocket\Connection` represents one accepted client connection.
 
 | Method | Description |
 |---|---|
@@ -180,6 +180,8 @@ Read-only properties:
 
 ## Benchmarks
 
+### Protocol
+
 **Environment:** PHP 8.3.31, `zend.assertions=-1`, Apple Silicon macOS, 100,000 iterations for 64B payloads and 20,000 iterations for 1024B payloads. Results from May 14, 2026.
 AMPHP WebSocket Server v4.0.0, Ratchet v0.4.0, and Workerman v5.2.0 were installed from Composer. OpenSwoole v26.2.0 was installed from PECL.
 
@@ -190,9 +192,40 @@ AMPHP WebSocket Server v4.0.0, Ratchet v0.4.0, and Workerman v5.2.0 were install
 | `encode text 1024B` | 2,495,412 ops/sec | 1,327,041 ops/sec | 3,558,508 ops/sec | 6,403,416 ops/sec | **11,334,123 ops/sec** |
 | `decode masked text 1024B` | 362,809 ops/sec | 270,385 ops/sec | 818,987 ops/sec | 3,658,342 ops/sec | **5,000,625 ops/sec** |
 
-> These benchmarks measure RFC 6455 frame encode/decode throughput. Full socket/server load tests should be added once the native server runtime accepts real connections.
->
-> **[Run the benchmarks yourself ->](bench/)**
+Run:
+
+```bash
+php -d zend.assertions=-1 \
+  -d extension="$PWD/modules/websocket.so" \
+  bench/protocol/websocket.php
+```
+
+### Server Runtime
+
+**Environment:** PHP 8.3.31, `zend.assertions=-1`, Apple Silicon macOS, 1,000 TCP connections, average of 3 runs. Results from May 17, 2026. ext-websocket used the native `kqueue` driver.
+
+| Benchmark | amphp/socket | workerman/workerman | openswoole | ext-websocket |
+|---|--:|--:|--:|--:|
+| `tcp accept/close` | 19,924 connections/sec | **21,365 connections/sec** | 15,750 connections/sec | 19,188 connections/sec |
+| `client connect loop` | **10,239 connections/sec** | 10,218 connections/sec | 4,949 connections/sec | 10,016 connections/sec |
+
+This benchmark starts a fresh server process, then measures TCP listen/accept/close for the current server runtime surface up to the last accepted connection. It does not include WebSocket upgrade, frame parsing, or message dispatch yet. The ext-websocket row uses the native zero-argument `onOpen(): false` fast-reject path; callback-based libraries expose the accepted socket or connection object. The `ratchet/rfc6455` protocol package is omitted from this runtime table because it is not a TCP server runtime.
+
+Run:
+
+```bash
+php -d zend.assertions=-1 \
+  -d extension="$PWD/modules/websocket.so" \
+  bench/server-runtime/websocket.php 1000 3
+
+php -d zend.assertions=-1 bench/server-runtime/amphp.php 1000 3
+php -d zend.assertions=-1 bench/server-runtime/workerman.php 1000 3
+php -d zend.assertions=-1 bench/server-runtime/openswoole.php 1000 3
+```
+
+Full WebSocket upgrade/message benchmarks will be added once message processing lands.
+
+**[Run all benchmarks yourself ->](bench/)**
 
 ## Testing
 

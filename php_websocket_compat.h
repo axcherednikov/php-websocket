@@ -39,4 +39,9 @@ static inline const char *websocket_zval_value_name(const zval *value)
 #endif
 }
 
+static inline void websocket_call_known_fcc(const zend_fcall_info_cache *fcc, zval *retval_ptr, uint32_t param_count, zval *params)
+{
+	zend_call_known_function(fcc->function_handler, fcc->object, fcc->called_scope, retval_ptr, param_count, params, NULL);
+}
+
 #endif /* PHP_WEBSOCKET_COMPAT_H */

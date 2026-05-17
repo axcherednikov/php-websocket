@@ -1,0 +1,19 @@
+<?php
+
+declare(strict_types=1);
+
+ini_set('memory_limit', '512M');
+
+require dirname(__DIR__) . '/vendor/autoload.php';
+require __DIR__ . '/common.php';
+
+$adapterVersion = Composer\InstalledVersions::getPrettyVersion('amphp/socket')
+    ?? Composer\InstalledVersions::getPrettyVersion('amphp/websocket-server')
+    ?? 'installed';
+
+runServerAcceptBenchmark(
+	'amphp/socket',
+	$adapterVersion,
+	__DIR__ . '/servers/amphp.php',
+	['-n'],
+);
