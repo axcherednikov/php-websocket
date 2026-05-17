@@ -7,10 +7,15 @@ parameters:
         - ../websocket.stub.php
         - stubs/openswoole.stub.php
     paths:
-        - bench.php
-        - bench_amphp.php
-        - bench_openswoole.php
-        - bench_ratchet.php
-        - bench_websocket.php
-        - bench_workerman.php
+        - protocol/amphp.php
+        - protocol/common.php
+        - protocol/openswoole.php
+        - protocol/ratchet.php
+        - protocol/websocket.php
+        - protocol/workerman.php
+        - server-runtime/amphp.php
+        - server-runtime/common.php
+        - server-runtime/openswoole.php
+        - server-runtime/websocket.php
+        - server-runtime/workerman.php
     tmpDir: var/phpstan

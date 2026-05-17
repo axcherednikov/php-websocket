@@ -9,7 +9,7 @@ use Amp\Websocket\Parser\WebsocketFrameType;
 
 ini_set('memory_limit', '512M');
 
-require __DIR__ . '/vendor/autoload.php';
+require dirname(__DIR__) . '/vendor/autoload.php';
 
 $compiler = new Rfc6455FrameCompiler(masked: false);
 $handler = new class implements WebsocketFrameHandler {
@@ -37,5 +37,5 @@ $decode = static function (string $frame) use ($parser, $handler): string {
     return $handler->payload;
 };
 
-require __DIR__ . '/bench.php';
+require __DIR__ . '/common.php';
 runBenchmarkSuite($adapterName, $adapterVersion, $encode, $decode);

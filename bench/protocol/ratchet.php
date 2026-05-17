@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 ini_set('memory_limit', '512M');
 
-require __DIR__ . '/vendor/autoload.php';
+require dirname(__DIR__) . '/vendor/autoload.php';
 
 $adapterName = 'ratchet/rfc6455';
 $adapterVersion = Composer\InstalledVersions::getPrettyVersion('ratchet/rfc6455') ?? 'installed';
@@ -24,5 +24,5 @@ $decode = static function (string $frame): string {
     return $decoded->getPayload();
 };
 
-require __DIR__ . '/bench.php';
+require __DIR__ . '/common.php';
 runBenchmarkSuite($adapterName, $adapterVersion, $encode, $decode);
