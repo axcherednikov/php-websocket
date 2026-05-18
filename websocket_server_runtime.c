@@ -16,6 +16,13 @@
 #define WEBSOCKET_LISTEN_BACKLOG 1024
 #define WEBSOCKET_ACCEPT_BATCH_LIMIT 1024
 #define WEBSOCKET_LOOP_TIMEOUT_USEC 100000
+#define WEBSOCKET_READ_CHUNK_SIZE 4096
+
+static const char websocket_bad_request_response[] =
+	"HTTP/1.1 400 Bad Request\r\n"
+	"Connection: close\r\n"
+	"Content-Length: 0\r\n"
+	"\r\n";
 
 static void websocket_server_close_fd(const int fd)
 {
@@ -194,8 +201,11 @@ static bool websocket_server_close_connection_at(websocket_server_object *intern
 
 	connection_obj = Z_WEBSOCKET_CONNECTION_P(&connection);
 	connection_obj->open = false;
+	if (WEBSOCKET_G(driver) && connection_obj->fd >= 0) {
+		WEBSOCKET_G(driver)->unwatch(connection_obj->fd);
+	}
 
-	if (notify && !connection_obj->close_notified && !Z_ISUNDEF(intern->on_close)) {
+	if (notify && connection_obj->upgraded && !connection_obj->close_notified && !Z_ISUNDEF(intern->on_close)) {
 		zval params[1];
 
 		connection_obj->close_notified = true;
@@ -245,7 +255,7 @@ static bool websocket_server_notify_connection_closed(websocket_server_object *i
 	zval params[1];
 	bool ok;
 
-	if (connection_obj->close_notified || Z_ISUNDEF(intern->on_close)) {
+	if (!connection_obj->upgraded || connection_obj->close_notified || Z_ISUNDEF(intern->on_close)) {
 		return true;
 	}
 
@@ -254,16 +264,6 @@ static bool websocket_server_notify_connection_closed(websocket_server_object *i
 	ok = websocket_server_call_handler(&intern->on_close, 1, params);
 
 	return ok;
-}
-
-static void websocket_server_release_connection(websocket_server_object *intern, zval *connection)
-{
-	if (!EG(exception) && Z_ISUNDEF(intern->reusable_connection) && GC_REFCOUNT(Z_OBJ_P(connection)) == 1) {
-		ZVAL_COPY_VALUE(&intern->reusable_connection, connection);
-		return;
-	}
-
-	zval_ptr_dtor(connection);
 }
 
 static void websocket_server_create_connection_zval(websocket_server_object *intern, zval *connection)
@@ -277,44 +277,109 @@ static void websocket_server_create_connection_zval(websocket_server_object *int
 	ZVAL_OBJ(connection, websocket_connection_ce->create_object(websocket_connection_ce));
 }
 
-static bool websocket_server_accept_connection(websocket_server_object *intern)
+static bool websocket_connection_ensure_read_capacity(websocket_connection_object *connection_obj, const size_t append_len)
 {
-	const int client_fd = accept(intern->listener_fd, NULL, NULL);
-	zval connection;
-	websocket_connection_object *connection_obj;
-	bool close_requested;
+	size_t needed;
+	size_t capacity;
+
+	if (append_len > WEBSOCKET_HTTP_MAX_REQUEST_SIZE || connection_obj->read_buffer_len > WEBSOCKET_HTTP_MAX_REQUEST_SIZE - append_len) {
+		return false;
+	}
+
+	needed = connection_obj->read_buffer_len + append_len;
+	if (needed <= connection_obj->read_buffer_capacity) {
+		return true;
+	}
+
+	capacity = connection_obj->read_buffer_capacity > 0 ? connection_obj->read_buffer_capacity : 1024;
+	while (capacity < needed) {
+		capacity *= 2;
+	}
+
+	if (capacity > WEBSOCKET_HTTP_MAX_REQUEST_SIZE) {
+		capacity = WEBSOCKET_HTTP_MAX_REQUEST_SIZE;
+	}
+
+	if (connection_obj->read_buffer) {
+		connection_obj->read_buffer = erealloc(connection_obj->read_buffer, capacity);
+	} else {
+		connection_obj->read_buffer = emalloc(capacity);
+	}
+	connection_obj->read_buffer_capacity = capacity;
+
+	return true;
+}
+
+static bool websocket_server_send_bytes(const int fd, const char *buffer, const size_t len)
+{
+	size_t sent = 0;
+
+	while (sent < len) {
+		ssize_t written;
+
+#ifdef MSG_NOSIGNAL
+		written = send(fd, buffer + sent, len - sent, MSG_NOSIGNAL);
+#else
+		written = send(fd, buffer + sent, len - sent, 0);
+#endif
+		if (written > 0) {
+			sent += (size_t) written;
+			continue;
+		}
+
+		if (written < 0 && errno == EINTR) {
+			continue;
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
+static void websocket_connection_discard_read_bytes(websocket_connection_object *connection_obj, const size_t bytes)
+{
+	if (bytes >= connection_obj->read_buffer_len) {
+		connection_obj->read_buffer_len = 0;
+		return;
+	}
+
+	memmove(connection_obj->read_buffer, connection_obj->read_buffer + bytes, connection_obj->read_buffer_len - bytes);
+	connection_obj->read_buffer_len -= bytes;
+}
+
+static bool websocket_server_finish_upgrade(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj, zend_string *accept_key, const size_t bytes_consumed)
+{
+	zend_string *response;
+	bool close_requested = false;
 	bool ok;
 	const bool needs_connection = Z_ISUNDEF(intern->on_open) || intern->on_open_param_count > 0;
 
-	if (client_fd < 0) {
-		return false;
-	}
-	errno = 0;
+	response = websocket_http_upgrade_response(accept_key);
+	ok = websocket_server_send_bytes(connection_obj->fd, ZSTR_VAL(response), ZSTR_LEN(response));
+	zend_string_release(response);
 
-	if (!needs_connection) {
-		ok = websocket_server_call_open_handler(intern, NULL, &close_requested);
-		if (!ok || close_requested) {
-			websocket_server_close_fd(client_fd);
-			return ok;
-		}
+	if (!ok) {
+		connection_obj->open = false;
+		return true;
 	}
 
-	websocket_server_create_connection_zval(intern, &connection);
-	connection_obj = Z_WEBSOCKET_CONNECTION_P(&connection);
-	websocket_connection_open(connection_obj, WEBSOCKET_G(next_connection_id)++, NULL, 0, client_fd);
+	connection_obj->upgraded = true;
+	websocket_connection_discard_read_bytes(connection_obj, bytes_consumed);
+	if (WEBSOCKET_G(driver) && connection_obj->fd >= 0) {
+		WEBSOCKET_G(driver)->unwatch(connection_obj->fd);
+	}
 
-	close_requested = false;
 	if (needs_connection) {
 		connection_obj->defer_close = true;
-		ok = websocket_server_call_open_handler(intern, &connection, &close_requested);
+		ok = websocket_server_call_open_handler(intern, connection, &close_requested);
 		connection_obj->defer_close = false;
 	} else {
-		ok = true;
+		ok = websocket_server_call_open_handler(intern, NULL, &close_requested);
 	}
 
 	if (!ok) {
-		websocket_connection_close_socket(connection_obj);
-		zval_ptr_dtor(&connection);
+		connection_obj->open = false;
 		return false;
 	}
 
@@ -323,22 +388,106 @@ static bool websocket_server_accept_connection(websocket_server_object *intern)
 	}
 
 	if (!connection_obj->open) {
-		ok = websocket_server_notify_connection_closed(intern, &connection, connection_obj);
-		websocket_connection_close_socket(connection_obj);
-		websocket_server_release_connection(intern, &connection);
-		return ok;
+		return websocket_server_notify_connection_closed(intern, connection, connection_obj);
 	}
 
+	return true;
+}
+
+static bool websocket_server_process_handshake(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj)
+{
+	char chunk[WEBSOCKET_READ_CHUNK_SIZE];
+
+	while (connection_obj->open && !connection_obj->upgraded) {
+		const ssize_t bytes_read = recv(connection_obj->fd, chunk, sizeof(chunk), 0);
+
+		if (bytes_read > 0) {
+			zend_string *accept_key = NULL;
+			size_t bytes_consumed = 0;
+			websocket_http_upgrade_result result;
+
+			if (!websocket_connection_ensure_read_capacity(connection_obj, (size_t) bytes_read)) {
+				(void) websocket_server_send_bytes(connection_obj->fd, websocket_bad_request_response, sizeof(websocket_bad_request_response) - 1);
+				connection_obj->open = false;
+				return true;
+			}
+
+			memcpy(connection_obj->read_buffer + connection_obj->read_buffer_len, chunk, (size_t) bytes_read);
+			connection_obj->read_buffer_len += (size_t) bytes_read;
+
+			result = websocket_http_parse_upgrade(connection_obj->read_buffer, connection_obj->read_buffer_len, &accept_key, &bytes_consumed);
+			if (result == WEBSOCKET_HTTP_UPGRADE_INCOMPLETE) {
+				continue;
+			}
+
+			if (result == WEBSOCKET_HTTP_UPGRADE_INVALID) {
+				(void) websocket_server_send_bytes(connection_obj->fd, websocket_bad_request_response, sizeof(websocket_bad_request_response) - 1);
+				connection_obj->open = false;
+				return true;
+			}
+
+			if (!websocket_server_finish_upgrade(intern, connection, connection_obj, accept_key, bytes_consumed)) {
+				zend_string_release(accept_key);
+				return false;
+			}
+
+			zend_string_release(accept_key);
+			return true;
+		}
+
+		if (bytes_read == 0) {
+			connection_obj->open = false;
+			return true;
+		}
+
+		if (errno == EINTR) {
+			continue;
+		}
+
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			return true;
+		}
+
+		connection_obj->open = false;
+		return true;
+	}
+
+	return true;
+}
+
+static bool websocket_server_accept_connection(websocket_server_object *intern)
+{
+	struct sockaddr_storage remote_addr;
+	socklen_t remote_addr_len = sizeof(remote_addr);
+	const int client_fd = accept(intern->listener_fd, (struct sockaddr *) &remote_addr, &remote_addr_len);
+	zval connection;
+	websocket_connection_object *connection_obj;
+
+	if (client_fd < 0) {
+		return false;
+	}
+	errno = 0;
+
 	if (websocket_server_set_nonblocking(client_fd) == FAILURE) {
-		websocket_connection_close_socket(connection_obj);
-		zval_ptr_dtor(&connection);
+		websocket_server_close_fd(client_fd);
 		zend_throw_error(NULL, "Cannot make accepted WebSocket connection non-blocking: %s", strerror(errno));
 		return false;
 	}
 
+	websocket_server_create_connection_zval(intern, &connection);
+	connection_obj = Z_WEBSOCKET_CONNECTION_P(&connection);
+	websocket_connection_open(connection_obj, WEBSOCKET_G(next_connection_id)++, (const struct sockaddr *) &remote_addr, remote_addr_len, client_fd);
+
 	if (!websocket_server_ensure_connection_capacity(intern)) {
 		websocket_connection_close_socket(connection_obj);
 		zval_ptr_dtor(&connection);
+		return false;
+	}
+
+	if (WEBSOCKET_G(driver)->watch_read(client_fd) == FAILURE) {
+		websocket_connection_close_socket(connection_obj);
+		zval_ptr_dtor(&connection);
+		zend_throw_error(NULL, "Cannot watch accepted WebSocket connection with %s driver: %s", WEBSOCKET_G(driver)->name, strerror(errno));
 		return false;
 	}
 
@@ -368,6 +517,46 @@ static bool websocket_server_accept_pending(websocket_server_object *intern)
 		}
 
 		accepted++;
+	}
+
+	return true;
+}
+
+static bool websocket_server_process_connection_fd(websocket_server_object *intern, const int fd)
+{
+	size_t i;
+
+	for (i = 0; i < intern->connection_count; i++) {
+		websocket_connection_object *connection_obj = Z_WEBSOCKET_CONNECTION_P(&intern->connections[i]);
+
+		if (connection_obj->fd != fd) {
+			continue;
+		}
+
+		if (!connection_obj->open || connection_obj->upgraded) {
+			return true;
+		}
+
+		return websocket_server_process_handshake(intern, &intern->connections[i], connection_obj);
+	}
+
+	return true;
+}
+
+static bool websocket_server_process_connections(websocket_server_object *intern)
+{
+	size_t i;
+
+	for (i = 0; i < intern->connection_count; i++) {
+		websocket_connection_object *connection_obj = Z_WEBSOCKET_CONNECTION_P(&intern->connections[i]);
+
+		if (!connection_obj->open || connection_obj->upgraded) {
+			continue;
+		}
+
+		if (!websocket_server_process_handshake(intern, &intern->connections[i], connection_obj)) {
+			return false;
+		}
 	}
 
 	return true;
@@ -420,9 +609,8 @@ bool websocket_server_runtime_run(websocket_server_object *intern)
 	}
 
 	while (intern->running && !WEBSOCKET_G(stopped)) {
-		int ready;
-
-		ready = WEBSOCKET_G(driver)->wait(WEBSOCKET_LOOP_TIMEOUT_USEC);
+		int ready_fd = -1;
+		const int ready = WEBSOCKET_G(driver)->wait(WEBSOCKET_LOOP_TIMEOUT_USEC, &ready_fd);
 		if (ready < 0) {
 			if (errno == EINTR) {
 				continue;
@@ -432,10 +620,18 @@ bool websocket_server_runtime_run(websocket_server_object *intern)
 			break;
 		}
 
-		if (ready > 0) {
+		if (ready > 0 && ready_fd == intern->listener_fd) {
 			if (!websocket_server_accept_pending(intern)) {
 				break;
 			}
+		} else if (ready > 0 && ready_fd >= 0) {
+			if (!websocket_server_process_connection_fd(intern, ready_fd)) {
+				break;
+			}
+		}
+
+		if (!websocket_server_process_connections(intern)) {
+			break;
 		}
 
 		if (!websocket_server_purge_closed_connections(intern)) {

@@ -25,4 +25,6 @@ runServerAcceptBenchmark(
 	$adapterVersion !== false ? $adapterVersion : 'loaded',
 	__DIR__ . '/servers/websocket.php',
 	['-n', '-d', 'extension=' . $extension],
+	[],
+	true,
 );

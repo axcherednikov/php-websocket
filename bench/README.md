@@ -28,14 +28,16 @@ AMPHP WebSocket Server v4.0.0, Ratchet v0.4.0, and Workerman v5.2.0 were install
 
 ### Server Runtime
 
-**Environment:** PHP 8.3.31, `zend.assertions=-1`, Apple Silicon macOS, 1,000 TCP connections, average of 3 runs. Results from May 17, 2026. ext-websocket used the native `kqueue` driver.
+**Environment:** Apple Silicon macOS, 1,000 connections, `zend.assertions=-1`. Raw TCP reference rows used PHP 8.3.31 and average of 3 runs. The ext-websocket HTTP Upgrade row used PHP 8.4.21 and one control run after handshake support landed. Results from May 17, 2026. ext-websocket used the native `kqueue` driver.
 
 | Benchmark | amphp/socket | workerman/workerman | openswoole | ext-websocket |
 |---|--:|--:|--:|--:|
-| `tcp accept/close` | 19,924 connections/sec | **21,365 connections/sec** | 15,750 connections/sec | 19,188 connections/sec |
-| `client connect loop` | **10,239 connections/sec** | 10,218 connections/sec | 4,949 connections/sec | 10,016 connections/sec |
+| `tcp accept/close` | 19,924 connections/sec | **21,365 connections/sec** | 15,750 connections/sec | n/a |
+| `client connect loop` | **10,239 connections/sec** | 10,218 connections/sec | 4,949 connections/sec | n/a |
+| `websocket upgrade/close` | n/a | n/a | n/a | 10,159 connections/sec |
+| `client upgrade loop` | n/a | n/a | n/a | 5,968 connections/sec |
 
-> This starts a fresh server process, then measures TCP listen/accept/close for the current server runtime surface up to the last accepted connection. It does not include WebSocket upgrade, frame parsing, or message callbacks yet. The ext-websocket row uses the native zero-argument `onOpen(): false` fast-reject path; callback-based libraries expose the accepted socket or connection object. `ratchet/rfc6455` is not listed here because the benchmarked package exposes protocol helpers, not a TCP server runtime.
+> This starts a fresh server process, then measures the current server runtime surface up to the last accepted connection. The ext-websocket entry now performs a real HTTP Upgrade before `onOpen(): false` closes the connection; the older TCP-only comparison rows are kept as raw accept-loop references. It does not include frame parsing or message callbacks yet. `ratchet/rfc6455` is not listed here because the benchmarked package exposes protocol helpers, not a TCP server runtime.
 
 ## Install Dependencies
 
@@ -106,8 +108,10 @@ Default: 100,000 protocol iterations or 1,000 server connections over 3 server-r
 
 | Benchmark | What it tests |
 |---|---|
-| `tcp accept/close` | Native `WebSocket\Server::run()` TCP accept loop and connection cleanup |
-| `client connect loop` | Client-side loop overhead while opening the benchmark connections |
+| `tcp accept/close` | Raw TCP accept loop and connection cleanup |
+| `websocket upgrade/close` | Native `WebSocket\Server::run()` HTTP Upgrade path and connection cleanup |
+| `client connect loop` | Client-side loop overhead while opening raw TCP benchmark connections |
+| `client upgrade loop` | Client-side loop overhead while opening and upgrading benchmark WebSocket connections |
 
 ## File Structure
 

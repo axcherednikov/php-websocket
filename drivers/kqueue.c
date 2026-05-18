@@ -70,7 +70,7 @@ static void websocket_kqueue_unwatch(const int fd)
 	errno = saved_errno;
 }
 
-static int websocket_kqueue_wait(const int timeout_usec)
+static int websocket_kqueue_wait(const int timeout_usec, int *ready_fd)
 {
 	struct kevent event;
 	struct timespec timeout;
@@ -91,6 +91,10 @@ static int websocket_kqueue_wait(const int timeout_usec)
 	if (ready > 0 && (event.flags & EV_ERROR) != 0) {
 		errno = event.data != 0 ? (int) event.data : EIO;
 		return -1;
+	}
+
+	if (ready > 0) {
+		*ready_fd = (int) event.ident;
 	}
 
 	return ready;

@@ -32,9 +32,13 @@ static zend_object *websocket_connection_create_object(zend_class_entry *ce)
 	intern->numeric_id = 0;
 	intern->fd = -1;
 	intern->open = false;
+	intern->upgraded = false;
 	intern->close_notified = false;
 	intern->has_remote_addr = false;
 	intern->defer_close = false;
+	intern->read_buffer = NULL;
+	intern->read_buffer_len = 0;
+	intern->read_buffer_capacity = 0;
 
 	intern->std.handlers = &websocket_connection_handlers;
 
@@ -134,8 +138,10 @@ void websocket_connection_open(websocket_connection_object *intern, uint64_t id,
 
 	intern->fd = fd;
 	intern->open = true;
+	intern->upgraded = false;
 	intern->close_notified = false;
 	intern->defer_close = false;
+	intern->read_buffer_len = 0;
 }
 
 static void websocket_connection_free_object(zend_object *object)
@@ -149,6 +155,9 @@ static void websocket_connection_free_object(zend_object *object)
 	}
 	if (intern->remote_address) {
 		zend_string_release(intern->remote_address);
+	}
+	if (intern->read_buffer) {
+		efree(intern->read_buffer);
 	}
 
 	zend_object_std_dtor(&intern->std);

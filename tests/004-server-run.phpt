@@ -97,7 +97,22 @@ do {
 } while (microtime(true) < $deadline);
 
 if ($client !== false) {
+    fwrite($client, implode("\r\n", [
+        'GET /chat HTTP/1.1',
+        'Host: 127.0.0.1:' . $port,
+        'Upgrade: websocket',
+        'Connection: Upgrade',
+        'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+        'Sec-WebSocket-Version: 13',
+        '',
+        '',
+    ]));
+
+    stream_set_timeout($client, 1);
+    $response = fread($client, 4096);
     fclose($client);
+} else {
+    $response = '';
 }
 
 $deadline = microtime(true) + 5.0;
@@ -124,6 +139,8 @@ proc_close($process);
 $events = file_exists($eventsFile) ? file($eventsFile, FILE_IGNORE_NEW_LINES) : [];
 
 var_dump($client !== false);
+var_dump(str_contains($response, "HTTP/1.1 101 Switching Protocols\r\n"));
+var_dump(str_contains($response, "Sec-WebSocket-Accept: s3pPLMBiTxaQ9kYGzzhZRbK+xOo=\r\n"));
 var_dump(count($events) >= 5);
 var_dump(isset($events[0]) && str_starts_with($events[0], '0.'));
 var_dump(isset($events[1]) && str_starts_with($events[1], '127.0.0.1:'));
@@ -138,6 +155,8 @@ var_dump($stderr === '');
 @rmdir($tmpDir);
 ?>
 --EXPECT--
+bool(true)
+bool(true)
 bool(true)
 bool(true)
 bool(true)

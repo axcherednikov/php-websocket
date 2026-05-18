@@ -12,6 +12,7 @@ function runServerAcceptBenchmark(
 	string $serverFile,
 	array $phpArgs = [],
 	array $scriptArgs = [],
+	bool $clientUpgrade = false,
 ): void
 {
 	if (!function_exists('proc_open')) {
@@ -59,7 +60,7 @@ function runServerAcceptBenchmark(
 
 	try {
 		for ($round = 1; $round <= $rounds; $round++) {
-			$result = serverAcceptRunOnce($workDir, $round, $connections, $serverFile, $phpArgs, $scriptArgs);
+			$result = serverAcceptRunOnce($workDir, $round, $connections, $serverFile, $phpArgs, $scriptArgs, $clientUpgrade);
 			$accepted = $result['accepted'];
 			$connected = $result['connected'];
 			$serverElapsed += $result['serverElapsed'];
@@ -72,17 +73,22 @@ function runServerAcceptBenchmark(
 	$serverElapsed /= $rounds;
 	$clientElapsed /= $rounds;
 
+	$serverBenchmark = $clientUpgrade ? 'websocket upgrade/close' : 'tcp accept/close';
+	$clientBenchmark = $clientUpgrade ? 'client upgrade loop' : 'client connect loop';
+
 	printf("Library: %s %s\n", $adapterName, $adapterVersion);
 	printf("Connections: %d\n", $connections);
 	printf("Rounds: %d\n\n", $rounds);
 	printf(
-		"tcp accept/close: %d connections avg in %.4fs (%.0f connections/sec)\n",
+		"%s: %d connections avg in %.4fs (%.0f connections/sec)\n",
+		$serverBenchmark,
 		$accepted,
 		$serverElapsed,
 		$accepted / max($serverElapsed, 0.000001)
 	);
 	printf(
-		"client connect loop: %d connections avg in %.4fs (%.0f connections/sec)\n",
+		"%s: %d connections avg in %.4fs (%.0f connections/sec)\n",
+		$clientBenchmark,
 		$connected,
 		$clientElapsed,
 		$connected / max($clientElapsed, 0.000001)
@@ -133,6 +139,7 @@ function serverAcceptRunOnce(
 	string $serverFile,
 	array $phpArgs,
 	array $scriptArgs,
+	bool $clientUpgrade,
 ): array {
 	$roundDir = $workDir . '/round-' . $round;
 	if (!is_dir($roundDir) && !mkdir($roundDir, 0777, true) && !is_dir($roundDir)) {
@@ -156,7 +163,7 @@ function serverAcceptRunOnce(
 
 	try {
 		for ($i = 0; $i < $connections; $i++) {
-			serverAcceptConnectOnce($port, $i === 0 ? 5.0 : 1.0, $process);
+			serverAcceptConnectOnce($port, $i === 0 ? 5.0 : 1.0, $process, $clientUpgrade);
 			$connected++;
 		}
 
@@ -235,7 +242,7 @@ function serverAcceptStartProcess(array $phpArgs, array $scriptArgs, string $ser
 /**
  * @param resource $process
  */
-function serverAcceptConnectOnce(int $port, float $timeout, $process): void
+function serverAcceptConnectOnce(int $port, float $timeout, $process, bool $clientUpgrade): void
 {
 	$deadline = microtime(true) + $timeout;
 	$errno = 0;
@@ -244,6 +251,27 @@ function serverAcceptConnectOnce(int $port, float $timeout, $process): void
 	do {
 		$client = @stream_socket_client('tcp://127.0.0.1:' . $port, $errno, $error, 0.1);
 		if ($client !== false) {
+			if ($clientUpgrade) {
+				$request = implode("\r\n", [
+					'GET / HTTP/1.1',
+					'Host: 127.0.0.1:' . $port,
+					'Upgrade: websocket',
+					'Connection: Upgrade',
+					'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==',
+					'Sec-WebSocket-Version: 13',
+					'',
+					'',
+				]);
+
+				fwrite($client, $request);
+				stream_set_timeout($client, 1);
+				$response = fread($client, 4096);
+				if (!is_string($response) || !str_contains($response, "HTTP/1.1 101 Switching Protocols\r\n")) {
+					fclose($client);
+					throw new RuntimeException('Benchmark server did not complete WebSocket upgrade');
+				}
+			}
+
 			fclose($client);
 			return;
 		}

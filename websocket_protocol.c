@@ -38,6 +38,19 @@ static uint32_t websocket_close_frame_prop_reason_num;
 static uint32_t websocket_close_frame_prop_flags_num;
 static uint32_t websocket_close_frame_prop_bytes_consumed_num;
 
+zend_string *websocket_protocol_accept_key(zend_string *key)
+{
+	PHP_SHA1_CTX ctx;
+	unsigned char digest[20];
+
+	PHP_SHA1Init(&ctx);
+	PHP_SHA1Update(&ctx, (unsigned char *) ZSTR_VAL(key), ZSTR_LEN(key));
+	PHP_SHA1Update(&ctx, (unsigned char *) WEBSOCKET_GUID, sizeof(WEBSOCKET_GUID) - 1);
+	PHP_SHA1Final(digest, &ctx);
+
+	return php_base64_encode(digest, sizeof(digest));
+}
+
 static uint32_t websocket_property_num(zend_class_entry *ce, const char *name, size_t name_len)
 {
 	zend_string *property_name = zend_string_init(name, name_len, 0);
@@ -343,21 +356,12 @@ PHP_METHOD(WebSocket_CloseFrame, __construct)
 PHP_METHOD(WebSocket_Protocol, acceptKey)
 {
 	zend_string *key;
-	PHP_SHA1_CTX ctx;
-	unsigned char digest[20];
-	zend_string *accept;
 
 	ZEND_PARSE_PARAMETERS_START(1, 1)
 		Z_PARAM_STR(key)
 	ZEND_PARSE_PARAMETERS_END();
 
-	PHP_SHA1Init(&ctx);
-	PHP_SHA1Update(&ctx, (unsigned char *) ZSTR_VAL(key), ZSTR_LEN(key));
-	PHP_SHA1Update(&ctx, (unsigned char *) WEBSOCKET_GUID, sizeof(WEBSOCKET_GUID) - 1);
-	PHP_SHA1Final(digest, &ctx);
-
-	accept = php_base64_encode(digest, sizeof(digest));
-	RETURN_STR(accept);
+	RETURN_STR(websocket_protocol_accept_key(key));
 }
 
 PHP_METHOD(WebSocket_Protocol, encode)
