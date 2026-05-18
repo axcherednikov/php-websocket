@@ -83,14 +83,42 @@ PHP_METHOD(WebSocket_Server, __construct)
 
 	ZEND_PARSE_PARAMETERS_START(0, 1)
 		Z_PARAM_OPTIONAL
-		Z_PARAM_ARRAY(options)
+		Z_PARAM_ZVAL(options)
 	ZEND_PARSE_PARAMETERS_END();
 
 	if (options) {
+		if (Z_TYPE_P(options) != IS_ARRAY && (Z_TYPE_P(options) != IS_OBJECT || !instanceof_function(Z_OBJCE_P(options), websocket_server_options_ce))) {
+			zend_argument_type_error(1, "must be of type array|WebSocket\\ServerOptions, %s given", websocket_zval_value_name(options));
+			RETURN_THROWS();
+		}
 		ZVAL_COPY(&intern->options, options);
 	} else {
 		array_init(&intern->options);
 	}
+}
+
+PHP_METHOD(WebSocket_ServerOptions, __construct)
+{
+	zend_long max_message_size = WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
+	zend_long max_queued_bytes = WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
+
+	ZEND_PARSE_PARAMETERS_START(0, 2)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_LONG(max_message_size)
+		Z_PARAM_LONG(max_queued_bytes)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (max_message_size < 1) {
+		zend_argument_value_error(1, "must be at least 1");
+		RETURN_THROWS();
+	}
+	if (max_queued_bytes < 1) {
+		zend_argument_value_error(2, "must be at least 1");
+		RETURN_THROWS();
+	}
+
+	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxMessageSize", sizeof("maxMessageSize") - 1, max_message_size);
+	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxQueuedBytes", sizeof("maxQueuedBytes") - 1, max_queued_bytes);
 }
 
 PHP_METHOD(WebSocket_Server, listen)
@@ -234,6 +262,7 @@ PHP_METHOD(WebSocket_Server, getDriver)
 void websocket_register_server_class(void)
 {
 	websocket_server_ce = register_class_WebSocket_Server();
+	websocket_server_options_ce = register_class_WebSocket_ServerOptions();
 	websocket_server_ce->create_object = websocket_server_create_object;
 
 	memcpy(&websocket_server_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));

@@ -23,9 +23,9 @@ final class Server
      * - maxMessageSize: maximum accepted text/binary message size in bytes.
      * - maxQueuedBytes: maximum queued outgoing bytes per connection.
      *
-     * @param array{maxMessageSize?: positive-int, maxQueuedBytes?: positive-int} $options
+     * @param ServerOptions|array{maxMessageSize?: positive-int, maxQueuedBytes?: positive-int} $options
      */
-    public function __construct(array $options = []) {}
+    public function __construct(ServerOptions|array $options = []) {}
 
     /**
      * Bind the TCP listener used by run().
@@ -84,6 +84,34 @@ final class Server
      * @return non-empty-string
      */
     public function getDriver(): string {}
+}
+
+/**
+ * Explicit configuration for WebSocket\Server.
+ */
+final class ServerOptions
+{
+    /**
+     * Maximum accepted text/binary message size in bytes.
+     *
+     * @var positive-int
+     */
+    public readonly int $maxMessageSize;
+
+    /**
+     * Maximum queued outgoing bytes per connection.
+     *
+     * @var positive-int
+     */
+    public readonly int $maxQueuedBytes;
+
+    /**
+     * @param positive-int $maxMessageSize
+     * @param positive-int $maxQueuedBytes
+     *
+     * @throws \ValueError If a limit is less than 1.
+     */
+    public function __construct(int $maxMessageSize = 16 * 1024 * 1024, int $maxQueuedBytes = 16 * 1024 * 1024) {}
 }
 
 /**

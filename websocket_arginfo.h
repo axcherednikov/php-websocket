@@ -9,7 +9,12 @@
 #include "Zend/zend_enum.h"
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_Server___construct, 0, 0, 0)
-	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, options, IS_ARRAY, 0, "[]")
+	{ "options", ZEND_TYPE_INIT_CLASS_CONST_MASK("WebSocket\\ServerOptions", MAY_BE_ARRAY | _ZEND_ARG_INFO_FLAGS(0, 0, 0)), "[]" },
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_ServerOptions___construct, 0, 0, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, maxMessageSize, IS_LONG, 0, "16 * 1024 * 1024")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, maxQueuedBytes, IS_LONG, 0, "16 * 1024 * 1024")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_listen, 0, 2, IS_VOID, 0)
@@ -88,6 +93,7 @@ ZEND_METHOD(WebSocket_Server, onError);
 ZEND_METHOD(WebSocket_Server, run);
 ZEND_METHOD(WebSocket_Server, stop);
 ZEND_METHOD(WebSocket_Server, getDriver);
+ZEND_METHOD(WebSocket_ServerOptions, __construct);
 ZEND_METHOD(WebSocket_Connection, send);
 ZEND_METHOD(WebSocket_Connection, close);
 ZEND_METHOD(WebSocket_Connection, isOpen);
@@ -109,6 +115,11 @@ static const zend_function_entry class_WebSocket_Server_methods[] = {
 	ZEND_ME(WebSocket_Server, run, arginfo_class_WebSocket_Server_run, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, stop, arginfo_class_WebSocket_Server_stop, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, getDriver, arginfo_class_WebSocket_Server_getDriver, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_WebSocket_ServerOptions_methods[] = {
+	ZEND_ME(WebSocket_ServerOptions, __construct, arginfo_class_WebSocket_ServerOptions___construct, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -144,6 +155,24 @@ static zend_class_entry *register_class_WebSocket_Server(void)
 
 	INIT_NS_CLASS_ENTRY(ce, "WebSocket", "Server", class_WebSocket_Server_methods);
 	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_WebSocket_ServerOptions(void)
+{
+	zend_class_entry ce, *class_entry;
+	zval property_maxMessageSize_default_value;
+	zval property_maxQueuedBytes_default_value;
+
+	INIT_NS_CLASS_ENTRY(ce, "WebSocket", "ServerOptions", class_WebSocket_ServerOptions_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL);
+
+	ZVAL_UNDEF(&property_maxMessageSize_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("maxMessageSize", sizeof("maxMessageSize") - 1, 1), &property_maxMessageSize_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+
+	ZVAL_UNDEF(&property_maxQueuedBytes_default_value);
+	zend_declare_typed_property(class_entry, zend_string_init("maxQueuedBytes", sizeof("maxQueuedBytes") - 1, 1), &property_maxQueuedBytes_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 
 	return class_entry;
 }
