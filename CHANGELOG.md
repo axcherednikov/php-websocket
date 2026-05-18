@@ -2,7 +2,7 @@
 
 All notable changes to ext-websocket are documented here.
 
-## 0.9.0 - 2026-05-18
+## 0.9.1 - 2026-05-18
 
 ### Added
 
@@ -11,6 +11,7 @@ All notable changes to ext-websocket are documented here.
 - Added this changelog.
 - Added production deployment notes.
 - Added PIE package metadata.
+- Added IDE and static-analysis contracts to `websocket.stub.php`.
 
 ## 0.8.0 - 2026-05-18
 

@@ -36,13 +36,13 @@ function messageRuntimeBenchmarkPort(): int
 }
 
 /**
- * @return int<0, 65535>
+ * @return int<1, 65535>
  */
 function messageRuntimeBenchmarkInternetPort(): int
 {
 	$port = messageRuntimeBenchmarkPort();
-	if ($port < 0 || $port > 65535) {
-		fwrite(STDERR, "WEBSOCKET_BENCH_PORT must be between 0 and 65535.\n");
+	if ($port < 1 || $port > 65535) {
+		fwrite(STDERR, "WEBSOCKET_BENCH_PORT must be between 1 and 65535.\n");
 		exit(1);
 	}
 
