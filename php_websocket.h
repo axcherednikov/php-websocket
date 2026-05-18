@@ -15,6 +15,7 @@ extern zend_module_entry websocket_module_entry;
 #define phpext_websocket_ptr &websocket_module_entry
 
 #define PHP_WEBSOCKET_VERSION "0.3.0-dev"
+#define WEBSOCKET_HTTP_MAX_REQUEST_SIZE 8192
 
 #ifdef ZTS
 #include "TSRM.h"
@@ -26,8 +27,14 @@ typedef struct _websocket_driver {
 	void (*shutdown)(void);
 	int (*watch_read)(int fd);
 	void (*unwatch)(int fd);
-	int (*wait)(int timeout_usec);
+	int (*wait)(int timeout_usec, int *ready_fd);
 } websocket_driver;
+
+typedef enum _websocket_http_upgrade_result {
+	WEBSOCKET_HTTP_UPGRADE_INCOMPLETE = 0,
+	WEBSOCKET_HTTP_UPGRADE_OK = 1,
+	WEBSOCKET_HTTP_UPGRADE_INVALID = 2,
+} websocket_http_upgrade_result;
 
 ZEND_BEGIN_MODULE_GLOBALS(websocket)
 	websocket_driver *driver;
@@ -72,9 +79,13 @@ typedef struct _websocket_connection_object {
 	uint64_t numeric_id;
 	int fd;
 	bool open;
+	bool upgraded;
 	bool close_notified;
 	bool has_remote_addr;
 	bool defer_close;
+	char *read_buffer;
+	size_t read_buffer_len;
+	size_t read_buffer_capacity;
 	zend_object std;
 } websocket_connection_object;
 
@@ -111,6 +122,9 @@ websocket_connection_object *websocket_connection_from_obj(zend_object *obj);
 void websocket_connection_open(websocket_connection_object *intern, uint64_t id, const struct sockaddr *remote_addr, socklen_t remote_addr_len, const int fd);
 void websocket_connection_cache_remote_address(websocket_connection_object *intern);
 void websocket_connection_close_socket(websocket_connection_object *intern);
+zend_string *websocket_protocol_accept_key(zend_string *key);
+websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, size_t len, zend_string **accept_key, size_t *bytes_consumed);
+zend_string *websocket_http_upgrade_response(zend_string *accept_key);
 
 static zend_always_inline websocket_server_object *Z_WEBSOCKET_SERVER_P(zval *zv)
 {

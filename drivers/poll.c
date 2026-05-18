@@ -8,47 +8,93 @@
 
 #include <errno.h>
 #include <poll.h>
+#include <string.h>
 
-static int poll_fd = -1;
+static struct pollfd *poll_fds = NULL;
+static size_t poll_fd_count = 0;
+static size_t poll_fd_capacity = 0;
 
 static int websocket_poll_init(void)
 {
-	poll_fd = -1;
+	poll_fds = NULL;
+	poll_fd_count = 0;
+	poll_fd_capacity = 0;
 	return SUCCESS;
 }
 
 static void websocket_poll_shutdown(void)
 {
-	poll_fd = -1;
+	if (poll_fds) {
+		efree(poll_fds);
+		poll_fds = NULL;
+	}
+
+	poll_fd_count = 0;
+	poll_fd_capacity = 0;
 }
 
 static int websocket_poll_watch_read(const int fd)
 {
-	poll_fd = fd;
+	size_t i;
+
+	for (i = 0; i < poll_fd_count; i++) {
+		if (poll_fds[i].fd == fd) {
+			return SUCCESS;
+		}
+	}
+
+	if (poll_fd_count == poll_fd_capacity) {
+		poll_fd_capacity = poll_fd_capacity > 0 ? poll_fd_capacity * 2 : 8;
+		poll_fds = poll_fds ? erealloc(poll_fds, sizeof(struct pollfd) * poll_fd_capacity) : emalloc(sizeof(struct pollfd) * poll_fd_capacity);
+	}
+
+	poll_fds[poll_fd_count].fd = fd;
+	poll_fds[poll_fd_count].events = POLLIN;
+	poll_fds[poll_fd_count].revents = 0;
+	poll_fd_count++;
+
 	return SUCCESS;
 }
 
 static void websocket_poll_unwatch(const int fd)
 {
-	if (poll_fd == fd) {
-		poll_fd = -1;
+	size_t i;
+
+	for (i = 0; i < poll_fd_count; i++) {
+		if (poll_fds[i].fd != fd) {
+			continue;
+		}
+
+		if (i + 1 < poll_fd_count) {
+			memmove(&poll_fds[i], &poll_fds[i + 1], sizeof(struct pollfd) * (poll_fd_count - i - 1));
+		}
+		poll_fd_count--;
+		break;
 	}
 }
 
-static int websocket_poll_wait(const int timeout_usec)
+static int websocket_poll_wait(const int timeout_usec, int *ready_fd)
 {
-	struct pollfd event;
+	size_t i;
 
-	if (poll_fd < 0) {
+	if (poll_fd_count == 0) {
 		errno = EBADF;
 		return -1;
 	}
 
-	event.fd = poll_fd;
-	event.events = POLLIN;
-	event.revents = 0;
+	const int ready = poll(poll_fds, (nfds_t) poll_fd_count, timeout_usec / 1000);
+	if (ready <= 0) {
+		return ready;
+	}
 
-	return poll(&event, 1, timeout_usec / 1000);
+	for (i = 0; i < poll_fd_count; i++) {
+		if (poll_fds[i].revents != 0) {
+			*ready_fd = poll_fds[i].fd;
+			return ready;
+		}
+	}
+
+	return ready;
 }
 
 static websocket_driver poll_driver = {
