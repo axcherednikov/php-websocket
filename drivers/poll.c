@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Aleksandr Cherednikov
+ * Licensed under the MIT License. See LICENSE for details.
+ */
+
 #ifdef HAVE_CONFIG_H
 # include "config.h"
 #endif
