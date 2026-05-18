@@ -18,4 +18,15 @@ parameters:
         - server-runtime/openswoole.php
         - server-runtime/websocket.php
         - server-runtime/workerman.php
+        - message-runtime/amphp.php
+        - message-runtime/common.php
+        - message-runtime/openswoole.php
+        - message-runtime/tls_proxy.php
+        - message-runtime/websocket.php
+        - message-runtime/workerman.php
+        - message-runtime/servers/amphp.php
+        - message-runtime/servers/bootstrap.php
+        - message-runtime/servers/openswoole.php
+        - message-runtime/servers/websocket.php
+        - message-runtime/servers/workerman.php
     tmpDir: var/phpstan
