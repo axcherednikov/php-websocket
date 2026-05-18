@@ -9,6 +9,7 @@ All notable changes to ext-websocket are documented here.
 - Added the MIT license file.
 - Added MIT license headers to source, benchmark, configuration, and workflow files.
 - Added this changelog.
+- Added PIE package metadata.
 
 ## 0.8.0 - 2026-05-18
 

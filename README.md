@@ -14,7 +14,15 @@ Current version: `0.8.0-dev`.
 
 PHP 8.3+ is recommended for local development.
 
-## Build
+## Installation
+
+### Via PIE
+
+```bash
+pie install axcherednikov/websocket
+```
+
+### From Source
 
 ```bash
 phpize

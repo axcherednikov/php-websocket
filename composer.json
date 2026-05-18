@@ -1,0 +1,21 @@
+{
+    "name": "axcherednikov/websocket",
+    "type": "php-ext",
+    "license": "MIT",
+    "description": "Native PHP extension providing RFC 6455 WebSocket protocol helpers and a WebSocket server runtime.",
+    "require": {
+        "php": ">=8.1"
+    },
+    "php-ext": {
+        "extension-name": "websocket",
+        "priority": 80,
+        "support-zts": true,
+        "support-nts": true,
+        "configure-options": [
+            {
+                "name": "enable-websocket",
+                "description": "Enable WebSocket support"
+            }
+        ]
+    }
+}
