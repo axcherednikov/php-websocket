@@ -2,9 +2,9 @@
 
 Native WebSocket extension for PHP.
 
-The project is at `0.7.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first native server runtime with HTTP Upgrade, text/binary messages, fragmented messages, ping/pong, close frames, protocol-error closes, and bounded outgoing write queues.
+`ext-websocket` keeps RFC 6455 protocol work in C and exposes a small PHP API for synchronous PHP code, async runtimes, and the native server runtime included in the extension.
 
-The goal is to keep the WebSocket protocol work in C and expose a small PHP API that can be used from normal PHP code, async runtimes, and the native server runtime that will live in this extension.
+Current version: `0.8.0-dev`.
 
 ## Requirements
 
@@ -12,14 +12,11 @@ The goal is to keep the WebSocket protocol work in C and expose a small PHP API 
 - Linux, macOS, BSD, or another POSIX-compatible OS
 - `phpize`, `php-config`, make, and a C compiler
 
-PHP 8.3 is the recommended version for local development.
+PHP 8.3+ is recommended for local development.
 
 ## Build
 
 ```bash
-git clone https://github.com/axcherednikov/php-websocket.git
-cd php-websocket
-
 phpize
 ./configure --enable-websocket
 make
@@ -39,13 +36,42 @@ Check that PHP can load it:
 php -m | grep websocket
 ```
 
-With Homebrew PHP 8.3, the build usually looks like this:
+With Homebrew PHP:
 
 ```bash
-phpize8.3
-./configure --enable-websocket --with-php-config="$(command -v php-config8.3)"
+/opt/homebrew/opt/php@8.3/bin/phpize
+./configure --enable-websocket --with-php-config=/opt/homebrew/opt/php@8.3/bin/php-config
 make -j"$(sysctl -n hw.ncpu)"
 ```
+
+## Quick Start
+
+```php
+<?php
+
+use WebSocket\Connection;
+use WebSocket\MessageType;
+use WebSocket\Server;
+
+$server = new Server();
+$server->listen('127.0.0.1', 8080);
+
+$server->onOpen(static function (Connection $connection): void {
+    echo "open {$connection->id}\n";
+});
+
+$server->onMessage(static function (Connection $connection, string $message): void {
+    $connection->send($message, MessageType::Text);
+});
+
+$server->onClose(static function (Connection $connection): void {
+    echo "close {$connection->id}\n";
+});
+
+$server->run();
+```
+
+See [examples/run_server.php](examples/run_server.php) for a runnable example.
 
 ## Protocol Helpers
 
@@ -61,180 +87,64 @@ $frame = Protocol::decode($bytes);
 echo $frame->payload; // hello
 ```
 
-For lower-level code, `pack()` and `unpack()` expose opcode, flags, and close frames:
+## Public API
 
-```php
-<?php
-
-use WebSocket\CloseFrame;
-use WebSocket\Frame;
-use WebSocket\MessageType;
-use WebSocket\Protocol;
-
-$frame = new Frame(MessageType::Text, 'hel', final: false);
-$bytes = Protocol::pack($frame);
-
-$close = new CloseFrame(Protocol::CLOSE_MESSAGE_TOO_BIG, 'too big');
-$decoded = Protocol::unpack(Protocol::pack($close));
-
-echo $decoded->code; // 1009
-```
-
-## API Reference
-
-The public API lives in the `WebSocket` namespace.
-
-### `Server`
-
-`WebSocket\Server` is the native server runtime. It accepts TCP connections, validates the HTTP Upgrade request, sends `101 Switching Protocols`, then reads WebSocket frames and dispatches complete text/binary messages, including fragmented messages.
+### `WebSocket\Server`
 
 Options:
 
 | Option | Description |
 |---|---|
-| `maxMessageSize` | Maximum incoming text/binary message size in bytes; defaults to 16 MiB |
-| `maxQueuedBytes` | Maximum outgoing bytes queued per connection; defaults to 16 MiB |
+| `maxMessageSize` | Maximum incoming text/binary message size; defaults to 16 MiB |
+| `maxQueuedBytes` | Maximum outgoing queued bytes per connection; defaults to 16 MiB |
+
+Methods:
 
 | Method | Description |
 |---|---|
-| `__construct(array $options = [])` | Create a server instance with optional runtime options |
-| `listen(string $host, int $port): void` | Store the address the server should bind to |
-| `onOpen(Closure $handler): void` | Register a callback for successfully upgraded WebSocket connections; returning `false` closes the connection immediately |
-| `onMessage(Closure $handler): void` | Register a callback for complete text/binary messages; handlers may accept `(Connection $connection, string $message, MessageType $type)` |
-| `onClose(Closure $handler): void` | Register a callback for closed connections |
-| `onError(Closure $handler): void` | Register a callback for runtime errors |
-| `run(): void` | Start the native TCP accept loop, HTTP Upgrade handshake, and frame processing |
-| `stop(): void` | Request server shutdown |
-| `getDriver(): string` | Return the selected native I/O driver name |
+| `__construct(array $options = [])` | Create a server |
+| `listen(string $host, int $port): void` | Bind address for `run()` |
+| `onOpen(Closure $handler): void` | Register upgraded connection callback |
+| `onMessage(Closure $handler): void` | Register text/binary message callback |
+| `onClose(Closure $handler): void` | Register close callback |
+| `onError(Closure $handler): void` | Register runtime error callback |
+| `run(): void` | Start accept, HTTP Upgrade, and frame processing loop |
+| `stop(): void` | Request shutdown |
+| `getDriver(): string` | Return selected I/O driver |
 
-### `Connection`
+### `WebSocket\Connection`
 
-`WebSocket\Connection` represents one accepted client connection.
-
-| Method | Description |
+| Method / property | Description |
 |---|---|
-| `send(string $payload, MessageType $type = MessageType::Text): void` | Send one text, binary, or control frame to the connection, using the bounded write queue when the socket is not immediately writable |
-| `close(int $code = 1000, string $reason = ''): void` | Send a close frame, then close the connection |
-| `isOpen(): bool` | Check whether the connection is open |
+| `send(string $payload, MessageType $type = MessageType::Text): void` | Send text, binary, or control payload |
+| `close(int $code = 1000, string $reason = ''): void` | Send close frame and close the connection |
+| `isOpen(): bool` | Check connection state |
+| `readonly string $id` | Connection id |
+| `readonly string $remoteAddress` | Remote peer address |
 
-Read-only properties:
-
-| Property | Description |
-|---|---|
-| `id` | Connection id |
-| `remoteAddress` | Remote peer address |
-
-### `Protocol`
-
-`WebSocket\Protocol` contains stateless RFC 6455 helpers.
+### `WebSocket\Protocol`
 
 | Method | Description |
 |---|---|
 | `acceptKey(string $key): string` | Build `Sec-WebSocket-Accept` |
-| `encode(string $payload, MessageType $type = MessageType::Text, bool $masked = false): string` | Encode one complete frame |
-| `decode(string $buffer): Frame\|CloseFrame\|null` | Decode one frame, or return `null` for incomplete input |
-| `pack(string\|Frame\|CloseFrame $data, int $opcode = Protocol::OPCODE_TEXT, int $flags = Protocol::FLAG_FIN): string` | Encode one frame with raw opcode and flags |
-| `unpack(string $buffer): Frame\|CloseFrame\|null` | Decode one frame |
+| `encode(string $payload, MessageType $type = MessageType::Text, bool $masked = false): string` | Encode one frame |
+| `decode(string $buffer): Frame\|CloseFrame\|null` | Decode one frame |
+| `pack(string\|Frame\|CloseFrame $data, int $opcode = Protocol::OPCODE_TEXT, int $flags = Protocol::FLAG_FIN): string` | Encode with raw opcode and flags |
+| `unpack(string $buffer): Frame\|CloseFrame\|null` | Decode with raw opcode and flags |
 
-### `Frame`
+### Value Objects
 
-`WebSocket\Frame` is a decoded or user-created non-close WebSocket frame.
-
-| Method | Description |
+| Class | Description |
 |---|---|
-| `__construct(MessageType $type, string $payload, bool $final = true)` | Create a frame from message type, payload, and FIN state |
-
-Read-only properties:
-
-| Property | Description |
-|---|---|
-| `type` | High-level message type |
-| `opcode` | Raw WebSocket opcode |
-| `flags` | Raw frame flags |
-| `payload` | Frame payload |
-| `final` | Whether the frame has the FIN bit set |
-| `bytesConsumed` | Bytes consumed while decoding; `0` for manually created frames |
-
-### `CloseFrame`
-
-`WebSocket\CloseFrame` stores a parsed or user-created close frame.
-
-| Method | Description |
-|---|---|
-| `__construct(int $code = Protocol::CLOSE_NORMAL, string $reason = '')` | Create a close frame from code and reason |
-
-Read-only properties:
-
-| Property | Description |
-|---|---|
-| `code` | WebSocket close code |
-| `reason` | Close reason |
-| `flags` | Raw frame flags |
-| `bytesConsumed` | Bytes consumed while decoding; `0` for manually created frames |
-
-### `MessageType`
-
-`WebSocket\MessageType` maps PHP-friendly names to WebSocket opcodes.
-
-| Case | Description |
-|---|---|
-| `Continuation` | Continuation frame |
-| `Text` | Text message |
-| `Binary` | Binary message |
-| `Ping` | Ping control frame |
-| `Pong` | Pong control frame |
-| `Close` | Close control frame |
+| `Frame` | Non-close WebSocket frame with `type`, `opcode`, `flags`, `payload`, `final`, and `bytesConsumed` |
+| `CloseFrame` | Close frame with `code`, `reason`, `flags`, and `bytesConsumed` |
+| `MessageType` | Enum cases: `Continuation`, `Text`, `Binary`, `Ping`, `Pong`, `Close` |
 
 ## Benchmarks
 
-### Protocol
+Detailed benchmark results and commands live in [bench/README.md](bench/README.md).
 
-**Environment:** PHP 8.3.31, `zend.assertions=-1`, Apple Silicon macOS, 100,000 iterations for 64B payloads and 20,000 iterations for 1024B payloads. Results from May 14, 2026.
-AMPHP WebSocket Server v4.0.0, Ratchet v0.4.0, and Workerman v5.2.0 were installed from Composer. OpenSwoole v26.2.0 was installed from PECL.
-
-| Benchmark | amphp/websocket-server | ratchet/rfc6455 | workerman/workerman | openswoole | ext-websocket |
-|---|--:|--:|--:|--:|--:|
-| `encode text 64B` | 3,091,927 ops/sec | 1,495,896 ops/sec | 2,740,039 ops/sec | 7,613,850 ops/sec | **13,863,296 ops/sec** |
-| `decode masked text 64B` | 605,068 ops/sec | 568,839 ops/sec | 1,639,640 ops/sec | 4,171,098 ops/sec | **7,080,043 ops/sec** |
-| `encode text 1024B` | 2,495,412 ops/sec | 1,327,041 ops/sec | 3,558,508 ops/sec | 6,403,416 ops/sec | **11,334,123 ops/sec** |
-| `decode masked text 1024B` | 362,809 ops/sec | 270,385 ops/sec | 818,987 ops/sec | 3,658,342 ops/sec | **5,000,625 ops/sec** |
-
-Run:
-
-```bash
-php -d zend.assertions=-1 \
-  -d extension="$PWD/modules/websocket.so" \
-  bench/protocol/websocket.php
-```
-
-### Server Runtime
-
-**Environment:** Apple Silicon macOS, 1,000 connections, `zend.assertions=-1`. Raw TCP reference rows used PHP 8.3.31 and average of 3 runs. The ext-websocket HTTP Upgrade row used PHP 8.4.21 and one control run after handshake support landed. Results from May 17, 2026. ext-websocket used the native `kqueue` driver.
-
-| Benchmark | amphp/socket | workerman/workerman | openswoole | ext-websocket |
-|---|--:|--:|--:|--:|
-| `tcp accept/close` | 19,924 connections/sec | **21,365 connections/sec** | 15,750 connections/sec | n/a |
-| `client connect loop` | **10,239 connections/sec** | 10,218 connections/sec | 4,949 connections/sec | n/a |
-| `websocket upgrade/close` | n/a | n/a | n/a | 10,159 connections/sec |
-| `client upgrade loop` | n/a | n/a | n/a | 5,968 connections/sec |
-
-This benchmark starts a fresh server process, then measures the current server runtime surface up to the last accepted connection. The ext-websocket entry now performs a real HTTP Upgrade before `onOpen(): false` closes the connection; the older TCP-only comparison rows are kept as raw accept-loop references. It does not include frame parsing or message dispatch yet. The `ratchet/rfc6455` protocol package is omitted from this runtime table because it is not a TCP server runtime.
-
-Run:
-
-```bash
-php -d zend.assertions=-1 \
-  -d extension="$PWD/modules/websocket.so" \
-  bench/server-runtime/websocket.php 1000 3
-
-php -d zend.assertions=-1 bench/server-runtime/amphp.php 1000 3
-php -d zend.assertions=-1 bench/server-runtime/workerman.php 1000 3
-php -d zend.assertions=-1 bench/server-runtime/openswoole.php 1000 3
-```
-
-Full WebSocket message throughput benchmarks will be added separately.
-
-**[Run all benchmarks yourself ->](bench/)**
+The current benchmark suite covers protocol encode/decode, server accept/upgrade runtime, and real `ws://` / `wss://` message runtime against AMPHP, Workerman, and OpenSwoole.
 
 ## Testing
 

@@ -14,7 +14,7 @@
 extern zend_module_entry websocket_module_entry;
 #define phpext_websocket_ptr &websocket_module_entry
 
-#define PHP_WEBSOCKET_VERSION "0.7.0-dev"
+#define PHP_WEBSOCKET_VERSION "0.8.0-dev"
 #define WEBSOCKET_HTTP_MAX_REQUEST_SIZE 8192
 #define WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE (16 * 1024 * 1024)
 #define WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES (16 * 1024 * 1024)
