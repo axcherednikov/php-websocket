@@ -2,7 +2,7 @@
 
 Native WebSocket extension for PHP.
 
-The project is at `0.3.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first TCP server runtime with HTTP Upgrade handshake support. WebSocket message processing is still in progress.
+The project is at `0.5.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first native server runtime with HTTP Upgrade, text/binary messages, ping/pong, close frames, and protocol-error closes.
 
 The goal is to keep the WebSocket protocol work in C and expose a small PHP API that can be used from normal PHP code, async runtimes, and the native server runtime that will live in this extension.
 
@@ -86,17 +86,17 @@ The public API lives in the `WebSocket` namespace.
 
 ### `Server`
 
-`WebSocket\Server` is the native server runtime. It accepts TCP connections, validates the HTTP Upgrade request, sends `101 Switching Protocols`, and then exposes lifecycle callbacks. WebSocket message processing is still in progress.
+`WebSocket\Server` is the native server runtime. It accepts TCP connections, validates the HTTP Upgrade request, sends `101 Switching Protocols`, then reads and writes WebSocket frames.
 
 | Method | Description |
 |---|---|
 | `__construct(array $options = [])` | Create a server instance with optional runtime options |
 | `listen(string $host, int $port): void` | Store the address the server should bind to |
 | `onOpen(Closure $handler): void` | Register a callback for successfully upgraded WebSocket connections; returning `false` closes the connection immediately |
-| `onMessage(Closure $handler): void` | Register a callback for received messages |
+| `onMessage(Closure $handler): void` | Register a callback for received text/binary messages; handlers may accept `(Connection $connection, string $message, MessageType $type)` |
 | `onClose(Closure $handler): void` | Register a callback for closed connections |
 | `onError(Closure $handler): void` | Register a callback for runtime errors |
-| `run(): void` | Start the native TCP accept loop and HTTP Upgrade handshake processing |
+| `run(): void` | Start the native TCP accept loop, HTTP Upgrade handshake, and frame processing |
 | `stop(): void` | Request server shutdown |
 | `getDriver(): string` | Return the selected native I/O driver name |
 
@@ -106,8 +106,8 @@ The public API lives in the `WebSocket` namespace.
 
 | Method | Description |
 |---|---|
-| `send(string $payload, MessageType $type = MessageType::Text): void` | Send a message to the connection |
-| `close(int $code = 1000, string $reason = ''): void` | Close the connection with a WebSocket close code and reason |
+| `send(string $payload, MessageType $type = MessageType::Text): void` | Send one text, binary, or control frame to the connection |
+| `close(int $code = 1000, string $reason = ''): void` | Send a close frame, then close the connection |
 | `isOpen(): bool` | Check whether the connection is open |
 
 Read-only properties:
@@ -225,7 +225,7 @@ php -d zend.assertions=-1 bench/server-runtime/workerman.php 1000 3
 php -d zend.assertions=-1 bench/server-runtime/openswoole.php 1000 3
 ```
 
-Full WebSocket message benchmarks will be added once message processing lands.
+Full WebSocket message throughput benchmarks will be added separately.
 
 **[Run all benchmarks yourself ->](bench/)**
 

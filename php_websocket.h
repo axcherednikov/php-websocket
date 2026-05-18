@@ -14,8 +14,31 @@
 extern zend_module_entry websocket_module_entry;
 #define phpext_websocket_ptr &websocket_module_entry
 
-#define PHP_WEBSOCKET_VERSION "0.3.0-dev"
+#define PHP_WEBSOCKET_VERSION "0.5.0-dev"
 #define WEBSOCKET_HTTP_MAX_REQUEST_SIZE 8192
+#define WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE (16 * 1024 * 1024)
+#define WEBSOCKET_CLOSE_REASON_MAX_LEN 123
+
+#define WEBSOCKET_OPCODE_CONTINUATION 0x0
+#define WEBSOCKET_OPCODE_TEXT         0x1
+#define WEBSOCKET_OPCODE_BINARY       0x2
+#define WEBSOCKET_OPCODE_CLOSE        0x8
+#define WEBSOCKET_OPCODE_PING         0x9
+#define WEBSOCKET_OPCODE_PONG         0xA
+
+#define WEBSOCKET_FLAG_FIN      (1 << 0)
+#define WEBSOCKET_FLAG_COMPRESS (1 << 1)
+#define WEBSOCKET_FLAG_RSV1     (1 << 2)
+#define WEBSOCKET_FLAG_RSV2     (1 << 3)
+#define WEBSOCKET_FLAG_RSV3     (1 << 4)
+#define WEBSOCKET_FLAG_MASK     (1 << 5)
+#define WEBSOCKET_FLAGS_ALL \
+	(WEBSOCKET_FLAG_FIN | WEBSOCKET_FLAG_COMPRESS | WEBSOCKET_FLAG_RSV1 | \
+	 WEBSOCKET_FLAG_RSV2 | WEBSOCKET_FLAG_RSV3 | WEBSOCKET_FLAG_MASK)
+
+#define WEBSOCKET_CLOSE_NORMAL 1000
+#define WEBSOCKET_CLOSE_PROTOCOL_ERROR 1002
+#define WEBSOCKET_CLOSE_MESSAGE_TOO_BIG 1009
 
 #ifdef ZTS
 #include "TSRM.h"
@@ -122,7 +145,15 @@ websocket_connection_object *websocket_connection_from_obj(zend_object *obj);
 void websocket_connection_open(websocket_connection_object *intern, uint64_t id, const struct sockaddr *remote_addr, socklen_t remote_addr_len, const int fd);
 void websocket_connection_cache_remote_address(websocket_connection_object *intern);
 void websocket_connection_close_socket(websocket_connection_object *intern);
+bool websocket_connection_send_frame(websocket_connection_object *intern, zend_string *payload, uint8_t opcode);
+bool websocket_connection_send_close_frame(websocket_connection_object *intern, zend_long code, zend_string *reason);
 zend_string *websocket_protocol_accept_key(zend_string *key);
+uint8_t websocket_protocol_message_type_opcode(zval *type);
+zend_object *websocket_protocol_message_type_from_opcode(uint8_t opcode);
+bool websocket_protocol_opcode_is_valid(zend_long opcode);
+bool websocket_protocol_opcode_is_control(zend_long opcode);
+zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcode, uint8_t flags);
+zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reason);
 websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, size_t len, zend_string **accept_key, size_t *bytes_consumed);
 zend_string *websocket_http_upgrade_response(zend_string *accept_key);
 

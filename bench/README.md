@@ -10,7 +10,7 @@ The protocol suite measures hot paths:
 - server-side text frame encoding
 - masked client text frame decoding
 
-The server runtime suite measures the current native TCP accept loop. It does not measure WebSocket upgrade, frame parsing, or message dispatch yet.
+The server runtime suite currently measures raw TCP accept loops and the native HTTP Upgrade close path. It does not measure message throughput or broadcast yet.
 
 ## Results
 
@@ -37,7 +37,7 @@ AMPHP WebSocket Server v4.0.0, Ratchet v0.4.0, and Workerman v5.2.0 were install
 | `websocket upgrade/close` | n/a | n/a | n/a | 10,159 connections/sec |
 | `client upgrade loop` | n/a | n/a | n/a | 5,968 connections/sec |
 
-> This starts a fresh server process, then measures the current server runtime surface up to the last accepted connection. The ext-websocket entry now performs a real HTTP Upgrade before `onOpen(): false` closes the connection; the older TCP-only comparison rows are kept as raw accept-loop references. It does not include frame parsing or message callbacks yet. `ratchet/rfc6455` is not listed here because the benchmarked package exposes protocol helpers, not a TCP server runtime.
+> This starts a fresh server process, then measures the current server runtime surface up to the last accepted connection. The ext-websocket entry performs a real HTTP Upgrade before `onOpen(): false` closes the connection; the older TCP-only comparison rows are kept as raw accept-loop references. It does not include application message throughput yet. `ratchet/rfc6455` is not listed here because the benchmarked package exposes protocol helpers, not a TCP server runtime.
 
 ## Install Dependencies
 

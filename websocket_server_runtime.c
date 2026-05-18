@@ -18,6 +18,20 @@
 #define WEBSOCKET_LOOP_TIMEOUT_USEC 100000
 #define WEBSOCKET_READ_CHUNK_SIZE 4096
 
+typedef enum _websocket_server_frame_status {
+	WEBSOCKET_SERVER_FRAME_INCOMPLETE = 0,
+	WEBSOCKET_SERVER_FRAME_OK = 1,
+	WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR = 2,
+	WEBSOCKET_SERVER_FRAME_MESSAGE_TOO_BIG = 3,
+} websocket_server_frame_status;
+
+typedef struct _websocket_server_frame {
+	uint8_t opcode;
+	bool final;
+	size_t bytes_consumed;
+	zend_string *payload;
+} websocket_server_frame;
+
 static const char websocket_bad_request_response[] =
 	"HTTP/1.1 400 Bad Request\r\n"
 	"Connection: close\r\n"
@@ -277,12 +291,12 @@ static void websocket_server_create_connection_zval(websocket_server_object *int
 	ZVAL_OBJ(connection, websocket_connection_ce->create_object(websocket_connection_ce));
 }
 
-static bool websocket_connection_ensure_read_capacity(websocket_connection_object *connection_obj, const size_t append_len)
+static bool websocket_connection_ensure_read_capacity(websocket_connection_object *connection_obj, const size_t append_len, const size_t limit)
 {
 	size_t needed;
 	size_t capacity;
 
-	if (append_len > WEBSOCKET_HTTP_MAX_REQUEST_SIZE || connection_obj->read_buffer_len > WEBSOCKET_HTTP_MAX_REQUEST_SIZE - append_len) {
+	if (append_len > limit || connection_obj->read_buffer_len > limit - append_len) {
 		return false;
 	}
 
@@ -296,8 +310,8 @@ static bool websocket_connection_ensure_read_capacity(websocket_connection_objec
 		capacity *= 2;
 	}
 
-	if (capacity > WEBSOCKET_HTTP_MAX_REQUEST_SIZE) {
-		capacity = WEBSOCKET_HTTP_MAX_REQUEST_SIZE;
+	if (capacity > limit) {
+		capacity = limit;
 	}
 
 	if (connection_obj->read_buffer) {
@@ -348,6 +362,272 @@ static void websocket_connection_discard_read_bytes(websocket_connection_object 
 	connection_obj->read_buffer_len -= bytes;
 }
 
+static size_t websocket_server_max_message_size(websocket_server_object *intern)
+{
+	zval *value;
+
+	if (Z_TYPE(intern->options) != IS_ARRAY) {
+		return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
+	}
+
+	value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxMessageSize", sizeof("maxMessageSize") - 1);
+	if (!value) {
+		return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
+	}
+
+	const zend_long max_message_size = zval_get_long(value);
+	if (max_message_size <= 0) {
+		return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
+	}
+
+	return (size_t) max_message_size;
+}
+
+static bool websocket_server_close_with_code(websocket_connection_object *connection_obj, const zend_long code, const char *reason)
+{
+	zend_string *reason_string;
+	bool ok;
+
+	reason_string = reason ? zend_string_init(reason, strlen(reason), false) : zend_string_init("", 0, false);
+	ok = websocket_connection_send_close_frame(connection_obj, code, reason_string);
+	zend_string_release(reason_string);
+	connection_obj->open = false;
+
+	return ok;
+}
+
+static zend_always_inline void websocket_server_mask_payload(unsigned char *dst, const unsigned char *src, const size_t len, const uint8_t mask[4])
+{
+	size_t i;
+
+	for (i = 0; i < len; i++) {
+		dst[i] = src[i] ^ mask[i & 3];
+	}
+}
+
+static bool websocket_server_close_code_is_valid(const zend_long code)
+{
+	if (code < 1000 || code > 4999) {
+		return false;
+	}
+
+	switch (code) {
+		case 1004:
+		case 1005:
+		case 1006:
+		case 1015:
+			return false;
+		default:
+			return true;
+	}
+}
+
+static websocket_server_frame_status websocket_server_parse_frame(websocket_connection_object *connection_obj, const size_t max_message_size, websocket_server_frame *frame)
+{
+	const unsigned char *in = (const unsigned char *) connection_obj->read_buffer;
+	const size_t len = connection_obj->read_buffer_len;
+	size_t pos = 2;
+	uint8_t b0;
+	uint8_t b1;
+	uint64_t payload_len;
+	uint8_t mask[4];
+	size_t i;
+
+	memset(frame, 0, sizeof(*frame));
+
+	if (len < 2) {
+		return WEBSOCKET_SERVER_FRAME_INCOMPLETE;
+	}
+
+	b0 = in[0];
+	b1 = in[1];
+	frame->final = (b0 & 0x80) != 0;
+	frame->opcode = b0 & 0x0f;
+	payload_len = b1 & 0x7f;
+
+	if ((b0 & 0x70) != 0 || (b1 & 0x80) == 0) {
+		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+	}
+
+	if (!websocket_protocol_opcode_is_valid(frame->opcode) || frame->opcode == WEBSOCKET_OPCODE_CONTINUATION) {
+		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+	}
+
+	if ((frame->opcode == WEBSOCKET_OPCODE_TEXT || frame->opcode == WEBSOCKET_OPCODE_BINARY) && !frame->final) {
+		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+	}
+
+	if (payload_len == 126) {
+		if (len < 4) {
+			return WEBSOCKET_SERVER_FRAME_INCOMPLETE;
+		}
+
+		payload_len = ((uint64_t) in[2] << 8) | in[3];
+		if (payload_len < 126) {
+			return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+		}
+		pos = 4;
+	} else if (payload_len == 127) {
+		if (len < 10) {
+			return WEBSOCKET_SERVER_FRAME_INCOMPLETE;
+		}
+		if ((in[2] & 0x80) != 0) {
+			return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+		}
+
+		payload_len = 0;
+		for (i = 0; i < 8; i++) {
+			payload_len = (payload_len << 8) | in[2 + i];
+		}
+		if (payload_len <= 0xffff) {
+			return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+		}
+		pos = 10;
+	}
+
+	if (websocket_protocol_opcode_is_control(frame->opcode) && (!frame->final || payload_len > 125)) {
+		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+	}
+
+	if ((frame->opcode == WEBSOCKET_OPCODE_TEXT || frame->opcode == WEBSOCKET_OPCODE_BINARY) && payload_len > max_message_size) {
+		return WEBSOCKET_SERVER_FRAME_MESSAGE_TOO_BIG;
+	}
+
+	if (payload_len > SIZE_MAX || payload_len > SIZE_MAX - pos || len < pos + 4) {
+		return WEBSOCKET_SERVER_FRAME_INCOMPLETE;
+	}
+
+	memcpy(mask, in + pos, sizeof(mask));
+	pos += 4;
+
+	if (payload_len > SIZE_MAX - pos || len < pos + (size_t) payload_len) {
+		return WEBSOCKET_SERVER_FRAME_INCOMPLETE;
+	}
+
+	if (frame->opcode == WEBSOCKET_OPCODE_CLOSE) {
+		if (payload_len == 1) {
+			return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+		}
+		if (payload_len >= 2) {
+			const zend_long close_code = ((zend_long) (in[pos] ^ mask[0]) << 8) | (zend_long) (in[pos + 1] ^ mask[1]);
+
+			if (!websocket_server_close_code_is_valid(close_code)) {
+				return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
+			}
+		}
+	}
+
+	frame->payload = zend_string_alloc((size_t) payload_len, false);
+	websocket_server_mask_payload((unsigned char *) ZSTR_VAL(frame->payload), in + pos, (size_t) payload_len, mask);
+	ZSTR_VAL(frame->payload)[payload_len] = '\0';
+	frame->bytes_consumed = pos + (size_t) payload_len;
+
+	return WEBSOCKET_SERVER_FRAME_OK;
+}
+
+static bool websocket_server_call_message_handler(websocket_server_object *intern, zval *connection, zend_string *payload, const uint8_t opcode)
+{
+	zval params[3];
+	zval retval;
+	zend_object *type_case;
+	bool ok;
+
+	if (Z_ISUNDEF(intern->on_message)) {
+		return true;
+	}
+
+	type_case = websocket_protocol_message_type_from_opcode(opcode);
+	if (!type_case) {
+		return true;
+	}
+
+	ZVAL_COPY(&params[0], connection);
+	ZVAL_STR_COPY(&params[1], payload);
+	ZVAL_OBJ_COPY(&params[2], type_case);
+	ZVAL_UNDEF(&retval);
+
+	ok = call_user_function(EG(function_table), NULL, &intern->on_message, &retval, 3, params) != FAILURE;
+
+	zval_ptr_dtor(&params[0]);
+	zval_ptr_dtor(&params[1]);
+	zval_ptr_dtor(&params[2]);
+
+	if (!ok) {
+		zend_throw_error(NULL, "Failed to call WebSocket server message handler");
+		return false;
+	}
+
+	if (!Z_ISUNDEF(retval)) {
+		zval_ptr_dtor(&retval);
+	}
+
+	return !EG(exception);
+}
+
+static bool websocket_server_handle_frame(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj, websocket_server_frame *frame)
+{
+	bool ok = true;
+
+	switch (frame->opcode) {
+		case WEBSOCKET_OPCODE_TEXT:
+		case WEBSOCKET_OPCODE_BINARY:
+			ok = websocket_server_call_message_handler(intern, connection, frame->payload, frame->opcode);
+			break;
+		case WEBSOCKET_OPCODE_PING:
+			ok = websocket_connection_send_frame(connection_obj, frame->payload, WEBSOCKET_OPCODE_PONG);
+			break;
+		case WEBSOCKET_OPCODE_PONG:
+			break;
+		case WEBSOCKET_OPCODE_CLOSE:
+			if (connection_obj->open && connection_obj->upgraded) {
+				ok = websocket_connection_send_frame(connection_obj, frame->payload, WEBSOCKET_OPCODE_CLOSE);
+			}
+			connection_obj->open = false;
+			break;
+		default:
+			ok = websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_PROTOCOL_ERROR, "protocol error");
+			break;
+	}
+
+	if (frame->payload) {
+		zend_string_release(frame->payload);
+		frame->payload = NULL;
+	}
+
+	return ok && !EG(exception);
+}
+
+static bool websocket_server_process_buffered_frames(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj)
+{
+	const size_t max_message_size = websocket_server_max_message_size(intern);
+
+	while (connection_obj->open && connection_obj->upgraded && connection_obj->read_buffer_len > 0) {
+		websocket_server_frame frame;
+		const websocket_server_frame_status status = websocket_server_parse_frame(connection_obj, max_message_size, &frame);
+
+		if (status == WEBSOCKET_SERVER_FRAME_INCOMPLETE) {
+			return true;
+		}
+
+		if (status == WEBSOCKET_SERVER_FRAME_MESSAGE_TOO_BIG) {
+			(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_MESSAGE_TOO_BIG, "message too big");
+			return true;
+		}
+
+		if (status == WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR) {
+			(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_PROTOCOL_ERROR, "protocol error");
+			return true;
+		}
+
+		websocket_connection_discard_read_bytes(connection_obj, frame.bytes_consumed);
+		if (!websocket_server_handle_frame(intern, connection, connection_obj, &frame)) {
+			return false;
+		}
+	}
+
+	return true;
+}
+
 static bool websocket_server_finish_upgrade(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj, zend_string *accept_key, const size_t bytes_consumed)
 {
 	zend_string *response;
@@ -366,9 +646,6 @@ static bool websocket_server_finish_upgrade(websocket_server_object *intern, zva
 
 	connection_obj->upgraded = true;
 	websocket_connection_discard_read_bytes(connection_obj, bytes_consumed);
-	if (WEBSOCKET_G(driver) && connection_obj->fd >= 0) {
-		WEBSOCKET_G(driver)->unwatch(connection_obj->fd);
-	}
 
 	if (needs_connection) {
 		connection_obj->defer_close = true;
@@ -391,7 +668,7 @@ static bool websocket_server_finish_upgrade(websocket_server_object *intern, zva
 		return websocket_server_notify_connection_closed(intern, connection, connection_obj);
 	}
 
-	return true;
+	return websocket_server_process_buffered_frames(intern, connection, connection_obj);
 }
 
 static bool websocket_server_process_handshake(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj)
@@ -406,7 +683,7 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 			size_t bytes_consumed = 0;
 			websocket_http_upgrade_result result;
 
-			if (!websocket_connection_ensure_read_capacity(connection_obj, (size_t) bytes_read)) {
+			if (!websocket_connection_ensure_read_capacity(connection_obj, (size_t) bytes_read, WEBSOCKET_HTTP_MAX_REQUEST_SIZE)) {
 				(void) websocket_server_send_bytes(connection_obj->fd, websocket_bad_request_response, sizeof(websocket_bad_request_response) - 1);
 				connection_obj->open = false;
 				return true;
@@ -446,6 +723,51 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 
 		if (errno == EAGAIN || errno == EWOULDBLOCK) {
 			return true;
+		}
+
+		connection_obj->open = false;
+		return true;
+	}
+
+	return true;
+}
+
+static bool websocket_server_process_frame_reads(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj)
+{
+	char chunk[WEBSOCKET_READ_CHUNK_SIZE];
+	const size_t max_message_size = websocket_server_max_message_size(intern);
+	const size_t read_limit = max_message_size > SIZE_MAX - 14 ? SIZE_MAX : max_message_size + 14;
+
+	while (connection_obj->open && connection_obj->upgraded) {
+		const ssize_t bytes_read = recv(connection_obj->fd, chunk, sizeof(chunk), 0);
+
+		if (bytes_read > 0) {
+			if (!websocket_connection_ensure_read_capacity(connection_obj, (size_t) bytes_read, read_limit)) {
+				(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_MESSAGE_TOO_BIG, "message too big");
+				return true;
+			}
+
+			memcpy(connection_obj->read_buffer + connection_obj->read_buffer_len, chunk, (size_t) bytes_read);
+			connection_obj->read_buffer_len += (size_t) bytes_read;
+
+			if (!websocket_server_process_buffered_frames(intern, connection, connection_obj)) {
+				return false;
+			}
+
+			continue;
+		}
+
+		if (bytes_read == 0) {
+			connection_obj->open = false;
+			return true;
+		}
+
+		if (errno == EINTR) {
+			continue;
+		}
+
+		if (errno == EAGAIN || errno == EWOULDBLOCK) {
+			return websocket_server_process_buffered_frames(intern, connection, connection_obj);
 		}
 
 		connection_obj->open = false;
@@ -533,11 +855,15 @@ static bool websocket_server_process_connection_fd(websocket_server_object *inte
 			continue;
 		}
 
-		if (!connection_obj->open || connection_obj->upgraded) {
+		if (!connection_obj->open) {
 			return true;
 		}
 
-		return websocket_server_process_handshake(intern, &intern->connections[i], connection_obj);
+		if (!connection_obj->upgraded) {
+			return websocket_server_process_handshake(intern, &intern->connections[i], connection_obj);
+		}
+
+		return websocket_server_process_frame_reads(intern, &intern->connections[i], connection_obj);
 	}
 
 	return true;
@@ -550,11 +876,15 @@ static bool websocket_server_process_connections(websocket_server_object *intern
 	for (i = 0; i < intern->connection_count; i++) {
 		websocket_connection_object *connection_obj = Z_WEBSOCKET_CONNECTION_P(&intern->connections[i]);
 
-		if (!connection_obj->open || connection_obj->upgraded) {
+		if (!connection_obj->open) {
 			continue;
 		}
 
-		if (!websocket_server_process_handshake(intern, &intern->connections[i], connection_obj)) {
+		if (!connection_obj->upgraded && !websocket_server_process_handshake(intern, &intern->connections[i], connection_obj)) {
+			return false;
+		}
+
+		if (connection_obj->upgraded && connection_obj->read_buffer_len > 0 && !websocket_server_process_buffered_frames(intern, &intern->connections[i], connection_obj)) {
 			return false;
 		}
 	}

@@ -10,6 +10,7 @@
 #include <errno.h>
 #include <netdb.h>
 #include <string.h>
+#include <sys/socket.h>
 #include <unistd.h>
 
 static zend_object_handlers websocket_connection_handlers;
@@ -103,6 +104,10 @@ void websocket_connection_close_socket(websocket_connection_object *intern)
 	if (intern->fd >= 0) {
 		const int fd = intern->fd;
 
+		if (WEBSOCKET_G(driver)) {
+			WEBSOCKET_G(driver)->unwatch(fd);
+		}
+
 		if (GC_REFCOUNT(&intern->std) > 1) {
 			websocket_connection_cache_remote_address(intern);
 		}
@@ -113,6 +118,73 @@ void websocket_connection_close_socket(websocket_connection_object *intern)
 	}
 
 	intern->open = false;
+}
+
+static bool websocket_connection_send_bytes(const int fd, const char *buffer, const size_t len)
+{
+	size_t sent = 0;
+
+	while (sent < len) {
+		ssize_t written;
+
+#ifdef MSG_NOSIGNAL
+		written = send(fd, buffer + sent, len - sent, MSG_NOSIGNAL);
+#else
+		written = send(fd, buffer + sent, len - sent, 0);
+#endif
+		if (written > 0) {
+			sent += (size_t) written;
+			continue;
+		}
+
+		if (written < 0 && errno == EINTR) {
+			continue;
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
+bool websocket_connection_send_frame(websocket_connection_object *intern, zend_string *payload, const uint8_t opcode)
+{
+	zend_string *frame;
+	bool ok;
+
+	if (!intern->open || !intern->upgraded || intern->fd < 0) {
+		return false;
+	}
+
+	frame = websocket_protocol_pack_payload(payload, opcode, WEBSOCKET_FLAG_FIN);
+	ok = websocket_connection_send_bytes(intern->fd, ZSTR_VAL(frame), ZSTR_LEN(frame));
+	zend_string_release(frame);
+
+	if (!ok) {
+		intern->open = false;
+	}
+
+	return ok;
+}
+
+bool websocket_connection_send_close_frame(websocket_connection_object *intern, const zend_long code, zend_string *reason)
+{
+	zend_string *payload;
+	bool ok;
+
+	if (!intern->open || !intern->upgraded || intern->fd < 0) {
+		return false;
+	}
+
+	payload = websocket_protocol_close_payload(code, reason);
+	if (!payload) {
+		return false;
+	}
+
+	ok = websocket_connection_send_frame(intern, payload, WEBSOCKET_OPCODE_CLOSE);
+	zend_string_release(payload);
+
+	return ok;
 }
 
 void websocket_connection_open(websocket_connection_object *intern, uint64_t id, const struct sockaddr *remote_addr, socklen_t remote_addr_len, const int fd)
@@ -197,8 +269,25 @@ PHP_METHOD(WebSocket_Connection, send)
 		RETURN_THROWS();
 	}
 
-	(void) payload;
-	(void) type;
+	if (!intern->upgraded) {
+		zend_throw_error(NULL, "Cannot send before the WebSocket connection is upgraded");
+		RETURN_THROWS();
+	}
+
+	const uint8_t opcode = type ? websocket_protocol_message_type_opcode(type) : WEBSOCKET_OPCODE_TEXT;
+	if (opcode == WEBSOCKET_OPCODE_CONTINUATION) {
+		zend_argument_value_error(2, "must not be WebSocket\\MessageType::Continuation");
+		RETURN_THROWS();
+	}
+	if (websocket_protocol_opcode_is_control(opcode) && ZSTR_LEN(payload) > 125) {
+		zend_argument_value_error(1, "control frame payload must be at most 125 bytes");
+		RETURN_THROWS();
+	}
+
+	if (!websocket_connection_send_frame(intern, payload, opcode)) {
+		zend_throw_error(NULL, "Failed to send WebSocket frame");
+		RETURN_THROWS();
+	}
 }
 
 PHP_METHOD(WebSocket_Connection, close)
@@ -219,11 +308,22 @@ PHP_METHOD(WebSocket_Connection, close)
 		}
 	}
 
-	(void) reason;
+	if (!reason) {
+		reason = ZSTR_EMPTY_ALLOC();
+	}
+	if (ZSTR_LEN(reason) > WEBSOCKET_CLOSE_REASON_MAX_LEN) {
+		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
+		RETURN_THROWS();
+	}
+
 	websocket_connection_object *intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
 	if (intern->defer_close) {
 		intern->open = false;
 		return;
+	}
+
+	if (intern->open && intern->upgraded) {
+		(void) websocket_connection_send_close_frame(intern, code, reason);
 	}
 
 	websocket_connection_close_socket(intern);
