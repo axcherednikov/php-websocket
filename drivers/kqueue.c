@@ -54,19 +54,55 @@ static int websocket_kqueue_watch_read(const int fd)
 	return SUCCESS;
 }
 
-static void websocket_kqueue_unwatch(const int fd)
+static int websocket_kqueue_watch_write(const int fd)
 {
 	struct kevent event;
-	const int saved_errno = errno;
+
+	if (kqueue_fd < 0) {
+		errno = EBADF;
+		return FAILURE;
+	}
+
+	EV_SET(&event, (uintptr_t) fd, EVFILT_WRITE, EV_ADD | EV_ENABLE | EV_CLEAR, 0, 0, NULL);
+
+	while (kevent(kqueue_fd, &event, 1, NULL, 0, NULL) < 0) {
+		if (errno == EINTR) {
+			continue;
+		}
+
+		return FAILURE;
+	}
+
+	return SUCCESS;
+}
+
+static void websocket_kqueue_unwatch_event(const int fd, const int16_t filter)
+{
+	struct kevent event;
 
 	if (kqueue_fd < 0) {
 		return;
 	}
 
-	EV_SET(&event, (uintptr_t) fd, EVFILT_READ, EV_DELETE, 0, 0, NULL);
+	EV_SET(&event, (uintptr_t) fd, filter, EV_DELETE, 0, 0, NULL);
 	while (kevent(kqueue_fd, &event, 1, NULL, 0, NULL) < 0 && errno == EINTR) {
 	}
+}
 
+static void websocket_kqueue_unwatch_write(const int fd)
+{
+	const int saved_errno = errno;
+
+	websocket_kqueue_unwatch_event(fd, EVFILT_WRITE);
+	errno = saved_errno;
+}
+
+static void websocket_kqueue_unwatch(const int fd)
+{
+	const int saved_errno = errno;
+
+	websocket_kqueue_unwatch_event(fd, EVFILT_READ);
+	websocket_kqueue_unwatch_event(fd, EVFILT_WRITE);
 	errno = saved_errno;
 }
 
@@ -105,6 +141,8 @@ static websocket_driver kqueue_driver = {
 	websocket_kqueue_init,
 	websocket_kqueue_shutdown,
 	websocket_kqueue_watch_read,
+	websocket_kqueue_watch_write,
+	websocket_kqueue_unwatch_write,
 	websocket_kqueue_unwatch,
 	websocket_kqueue_wait,
 };

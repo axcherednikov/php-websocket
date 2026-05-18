@@ -2,7 +2,7 @@
 
 Native WebSocket extension for PHP.
 
-The project is at `0.6.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first native server runtime with HTTP Upgrade, text/binary messages, fragmented messages, ping/pong, close frames, and protocol-error closes.
+The project is at `0.7.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first native server runtime with HTTP Upgrade, text/binary messages, fragmented messages, ping/pong, close frames, protocol-error closes, and bounded outgoing write queues.
 
 The goal is to keep the WebSocket protocol work in C and expose a small PHP API that can be used from normal PHP code, async runtimes, and the native server runtime that will live in this extension.
 
@@ -88,6 +88,13 @@ The public API lives in the `WebSocket` namespace.
 
 `WebSocket\Server` is the native server runtime. It accepts TCP connections, validates the HTTP Upgrade request, sends `101 Switching Protocols`, then reads WebSocket frames and dispatches complete text/binary messages, including fragmented messages.
 
+Options:
+
+| Option | Description |
+|---|---|
+| `maxMessageSize` | Maximum incoming text/binary message size in bytes; defaults to 16 MiB |
+| `maxQueuedBytes` | Maximum outgoing bytes queued per connection; defaults to 16 MiB |
+
 | Method | Description |
 |---|---|
 | `__construct(array $options = [])` | Create a server instance with optional runtime options |
@@ -106,7 +113,7 @@ The public API lives in the `WebSocket` namespace.
 
 | Method | Description |
 |---|---|
-| `send(string $payload, MessageType $type = MessageType::Text): void` | Send one text, binary, or control frame to the connection |
+| `send(string $payload, MessageType $type = MessageType::Text): void` | Send one text, binary, or control frame to the connection, using the bounded write queue when the socket is not immediately writable |
 | `close(int $code = 1000, string $reason = ''): void` | Send a close frame, then close the connection |
 | `isOpen(): bool` | Check whether the connection is open |
 

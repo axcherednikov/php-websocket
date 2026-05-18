@@ -383,6 +383,27 @@ static size_t websocket_server_max_message_size(websocket_server_object *intern)
 	return (size_t) max_message_size;
 }
 
+static size_t websocket_server_max_queued_bytes(websocket_server_object *intern)
+{
+	zval *value;
+
+	if (Z_TYPE(intern->options) != IS_ARRAY) {
+		return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
+	}
+
+	value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxQueuedBytes", sizeof("maxQueuedBytes") - 1);
+	if (!value) {
+		return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
+	}
+
+	const zend_long max_queued_bytes = zval_get_long(value);
+	if (max_queued_bytes <= 0) {
+		return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
+	}
+
+	return (size_t) max_queued_bytes;
+}
+
 static bool websocket_server_close_with_code(websocket_connection_object *connection_obj, const zend_long code, const char *reason)
 {
 	zend_string *reason_string;
@@ -391,7 +412,13 @@ static bool websocket_server_close_with_code(websocket_connection_object *connec
 	reason_string = reason ? zend_string_init(reason, strlen(reason), false) : zend_string_init("", 0, false);
 	ok = websocket_connection_send_close_frame(connection_obj, code, reason_string);
 	zend_string_release(reason_string);
-	connection_obj->open = false;
+
+	if (ok) {
+		websocket_connection_close_after_write(connection_obj);
+	} else {
+		websocket_connection_close_socket(connection_obj);
+		ok = true;
+	}
 
 	return ok;
 }
@@ -666,7 +693,12 @@ static bool websocket_server_handle_frame(websocket_server_object *intern, zval 
 				ok = websocket_connection_send_frame(connection_obj, frame->payload, WEBSOCKET_OPCODE_CLOSE);
 			}
 			websocket_server_clear_fragment(connection_obj);
-			connection_obj->open = false;
+			if (ok) {
+				websocket_connection_close_after_write(connection_obj);
+			} else {
+				websocket_connection_close_socket(connection_obj);
+				ok = true;
+			}
 			break;
 		default:
 			ok = websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_PROTOCOL_ERROR, "protocol error");
@@ -685,7 +717,7 @@ static bool websocket_server_process_buffered_frames(websocket_server_object *in
 {
 	const size_t max_message_size = websocket_server_max_message_size(intern);
 
-	while (connection_obj->open && connection_obj->upgraded && connection_obj->read_buffer_len > 0) {
+	while (connection_obj->open && !connection_obj->close_after_write && connection_obj->upgraded && connection_obj->read_buffer_len > 0) {
 		websocket_server_frame frame;
 		const websocket_server_frame_status status = websocket_server_parse_frame(connection_obj, max_message_size, &frame);
 
@@ -824,7 +856,7 @@ static bool websocket_server_process_frame_reads(websocket_server_object *intern
 	const size_t max_message_size = websocket_server_max_message_size(intern);
 	const size_t read_limit = max_message_size > SIZE_MAX - WEBSOCKET_READ_CHUNK_SIZE - 14 ? SIZE_MAX : max_message_size + WEBSOCKET_READ_CHUNK_SIZE + 14;
 
-	while (connection_obj->open && connection_obj->upgraded) {
+	while (connection_obj->open && !connection_obj->close_after_write && connection_obj->upgraded) {
 		const ssize_t bytes_read = recv(connection_obj->fd, chunk, sizeof(chunk), 0);
 
 		if (bytes_read > 0) {
@@ -885,6 +917,7 @@ static bool websocket_server_accept_connection(websocket_server_object *intern)
 	websocket_server_create_connection_zval(intern, &connection);
 	connection_obj = Z_WEBSOCKET_CONNECTION_P(&connection);
 	websocket_connection_open(connection_obj, WEBSOCKET_G(next_connection_id)++, (const struct sockaddr *) &remote_addr, remote_addr_len, client_fd);
+	connection_obj->max_queued_bytes = websocket_server_max_queued_bytes(intern);
 
 	if (!websocket_server_ensure_connection_capacity(intern)) {
 		websocket_connection_close_socket(connection_obj);
@@ -945,6 +978,14 @@ static bool websocket_server_process_connection_fd(websocket_server_object *inte
 			return true;
 		}
 
+		if (websocket_connection_has_pending_writes(connection_obj) && !websocket_connection_flush(connection_obj)) {
+			return true;
+		}
+
+		if (!connection_obj->open || connection_obj->close_after_write) {
+			return true;
+		}
+
 		if (!connection_obj->upgraded) {
 			return websocket_server_process_handshake(intern, &intern->connections[i], connection_obj);
 		}
@@ -963,6 +1004,14 @@ static bool websocket_server_process_connections(websocket_server_object *intern
 		websocket_connection_object *connection_obj = Z_WEBSOCKET_CONNECTION_P(&intern->connections[i]);
 
 		if (!connection_obj->open) {
+			continue;
+		}
+
+		if (websocket_connection_has_pending_writes(connection_obj) && !websocket_connection_flush(connection_obj)) {
+			continue;
+		}
+
+		if (!connection_obj->open || connection_obj->close_after_write) {
 			continue;
 		}
 
