@@ -39,6 +39,7 @@ static int websocket_poll_watch_read(const int fd)
 
 	for (i = 0; i < poll_fd_count; i++) {
 		if (poll_fds[i].fd == fd) {
+			poll_fds[i].events |= POLLIN;
 			return SUCCESS;
 		}
 	}
@@ -56,6 +57,55 @@ static int websocket_poll_watch_read(const int fd)
 	return SUCCESS;
 }
 
+static int websocket_poll_watch_write(const int fd)
+{
+	size_t i;
+
+	for (i = 0; i < poll_fd_count; i++) {
+		if (poll_fds[i].fd == fd) {
+			poll_fds[i].events |= POLLOUT;
+			return SUCCESS;
+		}
+	}
+
+	if (poll_fd_count == poll_fd_capacity) {
+		poll_fd_capacity = poll_fd_capacity > 0 ? poll_fd_capacity * 2 : 8;
+		poll_fds = poll_fds ? erealloc(poll_fds, sizeof(struct pollfd) * poll_fd_capacity) : emalloc(sizeof(struct pollfd) * poll_fd_capacity);
+	}
+
+	poll_fds[poll_fd_count].fd = fd;
+	poll_fds[poll_fd_count].events = POLLOUT;
+	poll_fds[poll_fd_count].revents = 0;
+	poll_fd_count++;
+
+	return SUCCESS;
+}
+
+static void websocket_poll_remove_fd_at(const size_t index)
+{
+	if (index + 1 < poll_fd_count) {
+		memmove(&poll_fds[index], &poll_fds[index + 1], sizeof(struct pollfd) * (poll_fd_count - index - 1));
+	}
+	poll_fd_count--;
+}
+
+static void websocket_poll_unwatch_write(const int fd)
+{
+	size_t i;
+
+	for (i = 0; i < poll_fd_count; i++) {
+		if (poll_fds[i].fd != fd) {
+			continue;
+		}
+
+		poll_fds[i].events &= (short) ~POLLOUT;
+		if (poll_fds[i].events == 0) {
+			websocket_poll_remove_fd_at(i);
+		}
+		break;
+	}
+}
+
 static void websocket_poll_unwatch(const int fd)
 {
 	size_t i;
@@ -65,10 +115,7 @@ static void websocket_poll_unwatch(const int fd)
 			continue;
 		}
 
-		if (i + 1 < poll_fd_count) {
-			memmove(&poll_fds[i], &poll_fds[i + 1], sizeof(struct pollfd) * (poll_fd_count - i - 1));
-		}
-		poll_fd_count--;
+		websocket_poll_remove_fd_at(i);
 		break;
 	}
 }
@@ -102,6 +149,8 @@ static websocket_driver poll_driver = {
 	websocket_poll_init,
 	websocket_poll_shutdown,
 	websocket_poll_watch_read,
+	websocket_poll_watch_write,
+	websocket_poll_unwatch_write,
 	websocket_poll_unwatch,
 	websocket_poll_wait,
 };

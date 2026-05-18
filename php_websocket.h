@@ -14,9 +14,10 @@
 extern zend_module_entry websocket_module_entry;
 #define phpext_websocket_ptr &websocket_module_entry
 
-#define PHP_WEBSOCKET_VERSION "0.6.0-dev"
+#define PHP_WEBSOCKET_VERSION "0.7.0-dev"
 #define WEBSOCKET_HTTP_MAX_REQUEST_SIZE 8192
 #define WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE (16 * 1024 * 1024)
+#define WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES (16 * 1024 * 1024)
 #define WEBSOCKET_CLOSE_REASON_MAX_LEN 123
 
 #define WEBSOCKET_OPCODE_CONTINUATION 0x0
@@ -49,6 +50,8 @@ typedef struct _websocket_driver {
 	int (*init)(void);
 	void (*shutdown)(void);
 	int (*watch_read)(int fd);
+	int (*watch_write)(int fd);
+	void (*unwatch_write)(int fd);
 	void (*unwatch)(int fd);
 	int (*wait)(int timeout_usec, int *ready_fd);
 } websocket_driver;
@@ -109,6 +112,14 @@ typedef struct _websocket_connection_object {
 	char *read_buffer;
 	size_t read_buffer_len;
 	size_t read_buffer_capacity;
+	zend_string **write_queue;
+	size_t write_queue_count;
+	size_t write_queue_capacity;
+	size_t write_queue_offset;
+	size_t queued_bytes;
+	size_t max_queued_bytes;
+	bool write_watched;
+	bool close_after_write;
 	bool fragmented;
 	uint8_t fragmented_opcode;
 	zend_string *fragmented_payload;
@@ -148,6 +159,9 @@ websocket_connection_object *websocket_connection_from_obj(zend_object *obj);
 void websocket_connection_open(websocket_connection_object *intern, uint64_t id, const struct sockaddr *remote_addr, socklen_t remote_addr_len, const int fd);
 void websocket_connection_cache_remote_address(websocket_connection_object *intern);
 void websocket_connection_close_socket(websocket_connection_object *intern);
+bool websocket_connection_flush(websocket_connection_object *intern);
+bool websocket_connection_has_pending_writes(websocket_connection_object *intern);
+void websocket_connection_close_after_write(websocket_connection_object *intern);
 bool websocket_connection_send_frame(websocket_connection_object *intern, zend_string *payload, uint8_t opcode);
 bool websocket_connection_send_close_frame(websocket_connection_object *intern, zend_long code, zend_string *reason);
 zend_string *websocket_protocol_accept_key(zend_string *key);

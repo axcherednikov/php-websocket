@@ -43,7 +43,52 @@ static int websocket_epoll_watch_read(const int fd)
 	event.events = EPOLLIN;
 	event.data.fd = fd;
 
+	if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) == 0) {
+		return SUCCESS;
+	}
+
+	if (errno != EEXIST) {
+		return FAILURE;
+	}
+
+	return epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &event) == 0 ? SUCCESS : FAILURE;
+}
+
+static int websocket_epoll_watch_write(const int fd)
+{
+	struct epoll_event event;
+
+	if (epoll_fd < 0) {
+		errno = EBADF;
+		return FAILURE;
+	}
+
+	event.events = EPOLLIN | EPOLLOUT;
+	event.data.fd = fd;
+
+	if (epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &event) == 0) {
+		return SUCCESS;
+	}
+
+	if (errno != ENOENT) {
+		return FAILURE;
+	}
+
 	return epoll_ctl(epoll_fd, EPOLL_CTL_ADD, fd, &event) == 0 ? SUCCESS : FAILURE;
+}
+
+static void websocket_epoll_unwatch_write(const int fd)
+{
+	struct epoll_event event;
+	const int saved_errno = errno;
+
+	if (epoll_fd >= 0) {
+		event.events = EPOLLIN;
+		event.data.fd = fd;
+		(void) epoll_ctl(epoll_fd, EPOLL_CTL_MOD, fd, &event);
+	}
+
+	errno = saved_errno;
 }
 
 static void websocket_epoll_unwatch(const int fd)
@@ -79,6 +124,8 @@ static websocket_driver epoll_driver = {
 	websocket_epoll_init,
 	websocket_epoll_shutdown,
 	websocket_epoll_watch_read,
+	websocket_epoll_watch_write,
+	websocket_epoll_unwatch_write,
 	websocket_epoll_unwatch,
 	websocket_epoll_wait,
 };

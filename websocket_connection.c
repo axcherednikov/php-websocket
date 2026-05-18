@@ -40,6 +40,14 @@ static zend_object *websocket_connection_create_object(zend_class_entry *ce)
 	intern->read_buffer = NULL;
 	intern->read_buffer_len = 0;
 	intern->read_buffer_capacity = 0;
+	intern->write_queue = NULL;
+	intern->write_queue_count = 0;
+	intern->write_queue_capacity = 0;
+	intern->write_queue_offset = 0;
+	intern->queued_bytes = 0;
+	intern->max_queued_bytes = WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
+	intern->write_watched = false;
+	intern->close_after_write = false;
 	intern->fragmented = false;
 	intern->fragmented_opcode = 0;
 	intern->fragmented_payload = NULL;
@@ -102,6 +110,26 @@ void websocket_connection_cache_remote_address(websocket_connection_object *inte
 	}
 }
 
+static void websocket_connection_clear_write_queue(websocket_connection_object *intern)
+{
+	size_t i;
+
+	for (i = 0; i < intern->write_queue_count; i++) {
+		zend_string_release(intern->write_queue[i]);
+	}
+
+	intern->write_queue_count = 0;
+	intern->write_queue_offset = 0;
+	intern->queued_bytes = 0;
+
+	if (intern->write_watched && intern->fd >= 0 && WEBSOCKET_G(driver)) {
+		WEBSOCKET_G(driver)->unwatch_write(intern->fd);
+	}
+
+	intern->write_watched = false;
+	intern->close_after_write = false;
+}
+
 void websocket_connection_close_socket(websocket_connection_object *intern)
 {
 	if (intern->fd >= 0) {
@@ -121,6 +149,7 @@ void websocket_connection_close_socket(websocket_connection_object *intern)
 	}
 
 	intern->open = false;
+	websocket_connection_clear_write_queue(intern);
 
 	if (intern->fragmented_payload) {
 		zend_string_release(intern->fragmented_payload);
@@ -130,25 +159,37 @@ void websocket_connection_close_socket(websocket_connection_object *intern)
 	intern->fragmented_opcode = 0;
 }
 
-static bool websocket_connection_send_bytes(const int fd, const char *buffer, const size_t len)
+bool websocket_connection_has_pending_writes(websocket_connection_object *intern)
 {
-	size_t sent = 0;
+	return intern->write_queue_count > 0;
+}
 
-	while (sent < len) {
+static bool websocket_connection_write_some(const int fd, zend_string *frame, size_t *offset, size_t *written_bytes)
+{
+	const size_t len = ZSTR_LEN(frame);
+
+	*written_bytes = 0;
+
+	while (*offset < len) {
 		ssize_t written;
 
 #ifdef MSG_NOSIGNAL
-		written = send(fd, buffer + sent, len - sent, MSG_NOSIGNAL);
+		written = send(fd, ZSTR_VAL(frame) + *offset, len - *offset, MSG_NOSIGNAL);
 #else
-		written = send(fd, buffer + sent, len - sent, 0);
+		written = send(fd, ZSTR_VAL(frame) + *offset, len - *offset, 0);
 #endif
 		if (written > 0) {
-			sent += (size_t) written;
+			*offset += (size_t) written;
+			*written_bytes += (size_t) written;
 			continue;
 		}
 
 		if (written < 0 && errno == EINTR) {
 			continue;
+		}
+
+		if (written < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
+			return true;
 		}
 
 		return false;
@@ -157,20 +198,145 @@ static bool websocket_connection_send_bytes(const int fd, const char *buffer, co
 	return true;
 }
 
+static bool websocket_connection_ensure_write_capacity(websocket_connection_object *intern)
+{
+	if (intern->write_queue_count < intern->write_queue_capacity) {
+		return true;
+	}
+
+	intern->write_queue_capacity = intern->write_queue_capacity > 0 ? intern->write_queue_capacity * 2 : 8;
+	intern->write_queue = intern->write_queue ? erealloc(intern->write_queue, sizeof(zend_string *) * intern->write_queue_capacity) : emalloc(sizeof(zend_string *) * intern->write_queue_capacity);
+
+	return true;
+}
+
+static bool websocket_connection_queue_frame(websocket_connection_object *intern, zend_string *frame, const size_t offset)
+{
+	const size_t remaining = ZSTR_LEN(frame) - offset;
+
+	if (remaining > intern->max_queued_bytes || intern->queued_bytes > intern->max_queued_bytes - remaining) {
+		errno = ENOBUFS;
+		return false;
+	}
+
+	if (!websocket_connection_ensure_write_capacity(intern)) {
+		return false;
+	}
+
+	if (intern->write_queue_count == 0) {
+		intern->write_queue_offset = offset;
+	}
+
+	zend_string_addref(frame);
+	intern->write_queue[intern->write_queue_count++] = frame;
+	intern->queued_bytes += remaining;
+
+	if (!intern->write_watched && WEBSOCKET_G(driver)) {
+		if (WEBSOCKET_G(driver)->watch_write(intern->fd) == FAILURE) {
+			return false;
+		}
+		intern->write_watched = true;
+	}
+
+	return true;
+}
+
+bool websocket_connection_flush(websocket_connection_object *intern)
+{
+	if (!intern->open || intern->fd < 0) {
+		return false;
+	}
+
+	while (intern->write_queue_count > 0) {
+		zend_string *frame = intern->write_queue[0];
+		size_t offset = intern->write_queue_offset;
+		size_t written_bytes = 0;
+
+		if (!websocket_connection_write_some(intern->fd, frame, &offset, &written_bytes)) {
+			intern->open = false;
+			return false;
+		}
+
+		if (written_bytes > intern->queued_bytes) {
+			intern->queued_bytes = 0;
+		} else {
+			intern->queued_bytes -= written_bytes;
+		}
+
+		if (offset < ZSTR_LEN(frame)) {
+			intern->write_queue_offset = offset;
+			return true;
+		}
+
+		zend_string_release(frame);
+		if (intern->write_queue_count > 1) {
+			memmove(&intern->write_queue[0], &intern->write_queue[1], sizeof(zend_string *) * (intern->write_queue_count - 1));
+		}
+		intern->write_queue_count--;
+		intern->write_queue_offset = 0;
+	}
+
+	if (intern->write_watched && WEBSOCKET_G(driver)) {
+		WEBSOCKET_G(driver)->unwatch_write(intern->fd);
+		intern->write_watched = false;
+	}
+
+	if (intern->close_after_write) {
+		websocket_connection_close_socket(intern);
+	}
+
+	return true;
+}
+
+void websocket_connection_close_after_write(websocket_connection_object *intern)
+{
+	if (!intern->open) {
+		return;
+	}
+
+	if (!websocket_connection_has_pending_writes(intern)) {
+		websocket_connection_close_socket(intern);
+		return;
+	}
+
+	intern->close_after_write = true;
+}
+
 bool websocket_connection_send_frame(websocket_connection_object *intern, zend_string *payload, const uint8_t opcode)
 {
 	zend_string *frame;
 	bool ok;
+	size_t offset = 0;
+	size_t written_bytes = 0;
 
-	if (!intern->open || !intern->upgraded || intern->fd < 0) {
+	if (!intern->open || intern->close_after_write || !intern->upgraded || intern->fd < 0) {
 		return false;
 	}
 
 	frame = websocket_protocol_pack_payload(payload, opcode, WEBSOCKET_FLAG_FIN);
-	ok = websocket_connection_send_bytes(intern->fd, ZSTR_VAL(frame), ZSTR_LEN(frame));
+
+	if (ZSTR_LEN(frame) > intern->max_queued_bytes) {
+		errno = ENOBUFS;
+		zend_string_release(frame);
+		return false;
+	}
+
+	if (intern->write_queue_count > 0) {
+		ok = websocket_connection_queue_frame(intern, frame, 0);
+		zend_string_release(frame);
+		if (!ok && errno != ENOBUFS) {
+			intern->open = false;
+		}
+		return ok;
+	}
+
+	ok = websocket_connection_write_some(intern->fd, frame, &offset, &written_bytes);
+	if (ok && offset < ZSTR_LEN(frame)) {
+		ok = websocket_connection_queue_frame(intern, frame, offset);
+	}
 	zend_string_release(frame);
 
-	if (!ok) {
+	if (!ok && errno != ENOBUFS) {
 		intern->open = false;
 	}
 
@@ -224,6 +390,8 @@ void websocket_connection_open(websocket_connection_object *intern, uint64_t id,
 	intern->close_notified = false;
 	intern->defer_close = false;
 	intern->read_buffer_len = 0;
+	websocket_connection_clear_write_queue(intern);
+	intern->max_queued_bytes = WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
 	if (intern->fragmented_payload) {
 		zend_string_release(intern->fragmented_payload);
 		intern->fragmented_payload = NULL;
@@ -246,6 +414,9 @@ static void websocket_connection_free_object(zend_object *object)
 	}
 	if (intern->read_buffer) {
 		efree(intern->read_buffer);
+	}
+	if (intern->write_queue) {
+		efree(intern->write_queue);
 	}
 	if (intern->fragmented_payload) {
 		zend_string_release(intern->fragmented_payload);
@@ -283,7 +454,7 @@ PHP_METHOD(WebSocket_Connection, send)
 		Z_PARAM_OBJECT_OF_CLASS(type, websocket_message_type_ce)
 	ZEND_PARSE_PARAMETERS_END();
 
-	if (!intern->open) {
+	if (!intern->open || intern->close_after_write) {
 		zend_throw_error(NULL, "Cannot send on a closed WebSocket connection");
 		RETURN_THROWS();
 	}
@@ -345,14 +516,16 @@ PHP_METHOD(WebSocket_Connection, close)
 		(void) websocket_connection_send_close_frame(intern, code, reason);
 	}
 
-	websocket_connection_close_socket(intern);
+	websocket_connection_close_after_write(intern);
 }
 
 PHP_METHOD(WebSocket_Connection, isOpen)
 {
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	RETURN_BOOL(Z_WEBSOCKET_CONNECTION_P(ZEND_THIS)->open);
+	websocket_connection_object *intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
+
+	RETURN_BOOL(intern->open && !intern->close_after_write);
 }
 
 void websocket_register_connection_class(void)
