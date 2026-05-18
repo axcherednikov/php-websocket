@@ -14,7 +14,7 @@
 extern zend_module_entry websocket_module_entry;
 #define phpext_websocket_ptr &websocket_module_entry
 
-#define PHP_WEBSOCKET_VERSION "0.5.0-dev"
+#define PHP_WEBSOCKET_VERSION "0.6.0-dev"
 #define WEBSOCKET_HTTP_MAX_REQUEST_SIZE 8192
 #define WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE (16 * 1024 * 1024)
 #define WEBSOCKET_CLOSE_REASON_MAX_LEN 123
@@ -109,6 +109,9 @@ typedef struct _websocket_connection_object {
 	char *read_buffer;
 	size_t read_buffer_len;
 	size_t read_buffer_capacity;
+	bool fragmented;
+	uint8_t fragmented_opcode;
+	zend_string *fragmented_payload;
 	zend_object std;
 } websocket_connection_object;
 
