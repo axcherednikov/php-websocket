@@ -449,11 +449,7 @@ static websocket_server_frame_status websocket_server_parse_frame(websocket_conn
 		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
 	}
 
-	if (!websocket_protocol_opcode_is_valid(frame->opcode) || frame->opcode == WEBSOCKET_OPCODE_CONTINUATION) {
-		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
-	}
-
-	if ((frame->opcode == WEBSOCKET_OPCODE_TEXT || frame->opcode == WEBSOCKET_OPCODE_BINARY) && !frame->final) {
+	if (!websocket_protocol_opcode_is_valid(frame->opcode)) {
 		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
 	}
 
@@ -489,7 +485,7 @@ static websocket_server_frame_status websocket_server_parse_frame(websocket_conn
 		return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
 	}
 
-	if ((frame->opcode == WEBSOCKET_OPCODE_TEXT || frame->opcode == WEBSOCKET_OPCODE_BINARY) && payload_len > max_message_size) {
+	if (!websocket_protocol_opcode_is_control(frame->opcode) && payload_len > max_message_size) {
 		return WEBSOCKET_SERVER_FRAME_MESSAGE_TOO_BIG;
 	}
 
@@ -564,6 +560,92 @@ static bool websocket_server_call_message_handler(websocket_server_object *inter
 	return !EG(exception);
 }
 
+static void websocket_server_clear_fragment(websocket_connection_object *connection_obj)
+{
+	if (connection_obj->fragmented_payload) {
+		zend_string_release(connection_obj->fragmented_payload);
+		connection_obj->fragmented_payload = NULL;
+	}
+
+	connection_obj->fragmented = false;
+	connection_obj->fragmented_opcode = 0;
+}
+
+static bool websocket_server_append_fragment(websocket_connection_object *connection_obj, zend_string *payload, const size_t max_message_size)
+{
+	const size_t current_len = connection_obj->fragmented_payload ? ZSTR_LEN(connection_obj->fragmented_payload) : 0;
+	const size_t append_len = ZSTR_LEN(payload);
+	zend_string *combined;
+
+	if (append_len > max_message_size || current_len > max_message_size - append_len) {
+		return false;
+	}
+
+	if (!connection_obj->fragmented_payload) {
+		connection_obj->fragmented_payload = zend_string_alloc(append_len, false);
+		if (append_len > 0) {
+			memcpy(ZSTR_VAL(connection_obj->fragmented_payload), ZSTR_VAL(payload), append_len);
+		}
+		ZSTR_VAL(connection_obj->fragmented_payload)[append_len] = '\0';
+		return true;
+	}
+
+	if (append_len == 0) {
+		return true;
+	}
+
+	combined = zend_string_extend(connection_obj->fragmented_payload, current_len + append_len, false);
+	memcpy(ZSTR_VAL(combined) + current_len, ZSTR_VAL(payload), append_len);
+	ZSTR_VAL(combined)[current_len + append_len] = '\0';
+	connection_obj->fragmented_payload = combined;
+
+	return true;
+}
+
+static bool websocket_server_handle_data_frame(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj, websocket_server_frame *frame)
+{
+	const size_t max_message_size = websocket_server_max_message_size(intern);
+
+	if (frame->opcode == WEBSOCKET_OPCODE_CONTINUATION) {
+		if (!connection_obj->fragmented) {
+			return websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_PROTOCOL_ERROR, "protocol error");
+		}
+
+		if (!websocket_server_append_fragment(connection_obj, frame->payload, max_message_size)) {
+			websocket_server_clear_fragment(connection_obj);
+			return websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_MESSAGE_TOO_BIG, "message too big");
+		}
+
+		if (!frame->final) {
+			return true;
+		}
+
+		if (!websocket_server_call_message_handler(intern, connection, connection_obj->fragmented_payload, connection_obj->fragmented_opcode)) {
+			websocket_server_clear_fragment(connection_obj);
+			return false;
+		}
+
+		websocket_server_clear_fragment(connection_obj);
+		return true;
+	}
+
+	if (connection_obj->fragmented) {
+		websocket_server_clear_fragment(connection_obj);
+		return websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_PROTOCOL_ERROR, "protocol error");
+	}
+
+	if (frame->final) {
+		return websocket_server_call_message_handler(intern, connection, frame->payload, frame->opcode);
+	}
+
+	connection_obj->fragmented = true;
+	connection_obj->fragmented_opcode = frame->opcode;
+	connection_obj->fragmented_payload = frame->payload;
+	frame->payload = NULL;
+
+	return true;
+}
+
 static bool websocket_server_handle_frame(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj, websocket_server_frame *frame)
 {
 	bool ok = true;
@@ -571,7 +653,8 @@ static bool websocket_server_handle_frame(websocket_server_object *intern, zval 
 	switch (frame->opcode) {
 		case WEBSOCKET_OPCODE_TEXT:
 		case WEBSOCKET_OPCODE_BINARY:
-			ok = websocket_server_call_message_handler(intern, connection, frame->payload, frame->opcode);
+		case WEBSOCKET_OPCODE_CONTINUATION:
+			ok = websocket_server_handle_data_frame(intern, connection, connection_obj, frame);
 			break;
 		case WEBSOCKET_OPCODE_PING:
 			ok = websocket_connection_send_frame(connection_obj, frame->payload, WEBSOCKET_OPCODE_PONG);
@@ -582,6 +665,7 @@ static bool websocket_server_handle_frame(websocket_server_object *intern, zval 
 			if (connection_obj->open && connection_obj->upgraded) {
 				ok = websocket_connection_send_frame(connection_obj, frame->payload, WEBSOCKET_OPCODE_CLOSE);
 			}
+			websocket_server_clear_fragment(connection_obj);
 			connection_obj->open = false;
 			break;
 		default:
@@ -610,11 +694,13 @@ static bool websocket_server_process_buffered_frames(websocket_server_object *in
 		}
 
 		if (status == WEBSOCKET_SERVER_FRAME_MESSAGE_TOO_BIG) {
+			websocket_server_clear_fragment(connection_obj);
 			(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_MESSAGE_TOO_BIG, "message too big");
 			return true;
 		}
 
 		if (status == WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR) {
+			websocket_server_clear_fragment(connection_obj);
 			(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_PROTOCOL_ERROR, "protocol error");
 			return true;
 		}
@@ -736,7 +822,7 @@ static bool websocket_server_process_frame_reads(websocket_server_object *intern
 {
 	char chunk[WEBSOCKET_READ_CHUNK_SIZE];
 	const size_t max_message_size = websocket_server_max_message_size(intern);
-	const size_t read_limit = max_message_size > SIZE_MAX - 14 ? SIZE_MAX : max_message_size + 14;
+	const size_t read_limit = max_message_size > SIZE_MAX - WEBSOCKET_READ_CHUNK_SIZE - 14 ? SIZE_MAX : max_message_size + WEBSOCKET_READ_CHUNK_SIZE + 14;
 
 	while (connection_obj->open && connection_obj->upgraded) {
 		const ssize_t bytes_read = recv(connection_obj->fd, chunk, sizeof(chunk), 0);

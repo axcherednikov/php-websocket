@@ -40,6 +40,9 @@ static zend_object *websocket_connection_create_object(zend_class_entry *ce)
 	intern->read_buffer = NULL;
 	intern->read_buffer_len = 0;
 	intern->read_buffer_capacity = 0;
+	intern->fragmented = false;
+	intern->fragmented_opcode = 0;
+	intern->fragmented_payload = NULL;
 
 	intern->std.handlers = &websocket_connection_handlers;
 
@@ -118,6 +121,13 @@ void websocket_connection_close_socket(websocket_connection_object *intern)
 	}
 
 	intern->open = false;
+
+	if (intern->fragmented_payload) {
+		zend_string_release(intern->fragmented_payload);
+		intern->fragmented_payload = NULL;
+	}
+	intern->fragmented = false;
+	intern->fragmented_opcode = 0;
 }
 
 static bool websocket_connection_send_bytes(const int fd, const char *buffer, const size_t len)
@@ -214,6 +224,12 @@ void websocket_connection_open(websocket_connection_object *intern, uint64_t id,
 	intern->close_notified = false;
 	intern->defer_close = false;
 	intern->read_buffer_len = 0;
+	if (intern->fragmented_payload) {
+		zend_string_release(intern->fragmented_payload);
+		intern->fragmented_payload = NULL;
+	}
+	intern->fragmented = false;
+	intern->fragmented_opcode = 0;
 }
 
 static void websocket_connection_free_object(zend_object *object)
@@ -230,6 +246,9 @@ static void websocket_connection_free_object(zend_object *object)
 	}
 	if (intern->read_buffer) {
 		efree(intern->read_buffer);
+	}
+	if (intern->fragmented_payload) {
+		zend_string_release(intern->fragmented_payload);
 	}
 
 	zend_object_std_dtor(&intern->std);

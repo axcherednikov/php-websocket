@@ -2,7 +2,7 @@
 
 Native WebSocket extension for PHP.
 
-The project is at `0.5.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first native server runtime with HTTP Upgrade, text/binary messages, ping/pong, close frames, and protocol-error closes.
+The project is at `0.6.0-dev`: the extension builds, registers the public PHP API, contains native RFC 6455 protocol helpers, and has the first native server runtime with HTTP Upgrade, text/binary messages, fragmented messages, ping/pong, close frames, and protocol-error closes.
 
 The goal is to keep the WebSocket protocol work in C and expose a small PHP API that can be used from normal PHP code, async runtimes, and the native server runtime that will live in this extension.
 
@@ -86,14 +86,14 @@ The public API lives in the `WebSocket` namespace.
 
 ### `Server`
 
-`WebSocket\Server` is the native server runtime. It accepts TCP connections, validates the HTTP Upgrade request, sends `101 Switching Protocols`, then reads and writes WebSocket frames.
+`WebSocket\Server` is the native server runtime. It accepts TCP connections, validates the HTTP Upgrade request, sends `101 Switching Protocols`, then reads WebSocket frames and dispatches complete text/binary messages, including fragmented messages.
 
 | Method | Description |
 |---|---|
 | `__construct(array $options = [])` | Create a server instance with optional runtime options |
 | `listen(string $host, int $port): void` | Store the address the server should bind to |
 | `onOpen(Closure $handler): void` | Register a callback for successfully upgraded WebSocket connections; returning `false` closes the connection immediately |
-| `onMessage(Closure $handler): void` | Register a callback for received text/binary messages; handlers may accept `(Connection $connection, string $message, MessageType $type)` |
+| `onMessage(Closure $handler): void` | Register a callback for complete text/binary messages; handlers may accept `(Connection $connection, string $message, MessageType $type)` |
 | `onClose(Closure $handler): void` | Register a callback for closed connections |
 | `onError(Closure $handler): void` | Register a callback for runtime errors |
 | `run(): void` | Start the native TCP accept loop, HTTP Upgrade handshake, and frame processing |
