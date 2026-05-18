@@ -158,6 +158,10 @@ To run tests against the built module directly:
 TEST_PHP_ARGS="-d extension=$PWD/modules/websocket.so" php run-tests.php -q tests
 ```
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
