@@ -1,5 +1,5 @@
 {
-    "name": "axcherednikov/websocket",
+    "name": "axcherednikov/php-websocket",
     "type": "php-ext",
     "license": "MIT",
     "description": "Native PHP extension providing RFC 6455 WebSocket protocol helpers and a WebSocket server runtime.",
