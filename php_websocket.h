@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Aleksandr Cherednikov
+ * Licensed under the MIT License. See LICENSE for details.
+ */
+
 #ifndef PHP_WEBSOCKET_H
 #define PHP_WEBSOCKET_H
 

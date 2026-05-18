@@ -1,5 +1,11 @@
 <?php
 
+/*
+ * Copyright (c) 2026 Aleksandr Cherednikov
+ * Licensed under the MIT License. See LICENSE for details.
+ */
+
+
 declare(strict_types=1);
 
 use Amp\Websocket\Parser\Rfc6455FrameCompiler;

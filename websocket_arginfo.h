@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Aleksandr Cherednikov
+ * Licensed under the MIT License. See LICENSE for details.
+ */
+
 /* Generated-by-hand bootstrap arginfo.
  * Keep this compatible with PHP 8.1+ until gen_stub.php can run in CI. */
 

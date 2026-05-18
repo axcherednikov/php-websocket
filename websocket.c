@@ -1,3 +1,8 @@
+/*
+ * Copyright (c) 2026 Aleksandr Cherednikov
+ * Licensed under the MIT License. See LICENSE for details.
+ */
+
 #include "php_websocket.h"
 #include "ext/standard/info.h"
 #include "php_websocket_compat.h"

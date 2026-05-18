@@ -1,3 +1,6 @@
+dnl Copyright (c) 2026 Aleksandr Cherednikov
+dnl Licensed under the MIT License. See LICENSE for details.
+
 PHP_ARG_ENABLE([websocket],
   [whether to enable native websocket support],
   [AS_HELP_STRING([--enable-websocket],
