@@ -146,6 +146,10 @@ Detailed benchmark results and commands live in [bench/README.md](bench/README.m
 
 The current benchmark suite covers protocol encode/decode, server accept/upgrade runtime, and real `ws://` / `wss://` message runtime against AMPHP, Workerman, and OpenSwoole.
 
+## Production
+
+See [docs/production.md](docs/production.md) for deployment notes and current runtime limits.
+
 ## Testing
 
 ```bash
