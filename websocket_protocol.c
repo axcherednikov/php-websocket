@@ -7,26 +7,6 @@
 
 #define WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
-#define WEBSOCKET_OPCODE_CONTINUATION 0x0
-#define WEBSOCKET_OPCODE_TEXT         0x1
-#define WEBSOCKET_OPCODE_BINARY       0x2
-#define WEBSOCKET_OPCODE_CLOSE        0x8
-#define WEBSOCKET_OPCODE_PING         0x9
-#define WEBSOCKET_OPCODE_PONG         0xA
-
-#define WEBSOCKET_FLAG_FIN      (1 << 0)
-#define WEBSOCKET_FLAG_COMPRESS (1 << 1)
-#define WEBSOCKET_FLAG_RSV1     (1 << 2)
-#define WEBSOCKET_FLAG_RSV2     (1 << 3)
-#define WEBSOCKET_FLAG_RSV3     (1 << 4)
-#define WEBSOCKET_FLAG_MASK     (1 << 5)
-#define WEBSOCKET_FLAGS_ALL \
-	(WEBSOCKET_FLAG_FIN | WEBSOCKET_FLAG_COMPRESS | WEBSOCKET_FLAG_RSV1 | \
-	 WEBSOCKET_FLAG_RSV2 | WEBSOCKET_FLAG_RSV3 | WEBSOCKET_FLAG_MASK)
-
-#define WEBSOCKET_CLOSE_NORMAL 1000
-#define WEBSOCKET_CLOSE_REASON_MAX_LEN 123
-
 static uint32_t websocket_frame_prop_type_num;
 static uint32_t websocket_frame_prop_opcode_num;
 static uint32_t websocket_frame_prop_flags_num;
@@ -62,7 +42,7 @@ static uint32_t websocket_property_num(zend_class_entry *ce, const char *name, s
 	return OBJ_PROP_TO_NUM(property_info->offset);
 }
 
-static bool websocket_opcode_is_valid(zend_long opcode)
+bool websocket_protocol_opcode_is_valid(zend_long opcode)
 {
 	switch (opcode) {
 		case WEBSOCKET_OPCODE_CONTINUATION:
@@ -77,12 +57,12 @@ static bool websocket_opcode_is_valid(zend_long opcode)
 	}
 }
 
-static bool websocket_opcode_is_control(zend_long opcode)
+bool websocket_protocol_opcode_is_control(zend_long opcode)
 {
 	return opcode >= 0x8 && opcode <= 0xf;
 }
 
-static uint8_t websocket_message_type_opcode(zval *type)
+uint8_t websocket_protocol_message_type_opcode(zval *type)
 {
 	zval *case_name_zv;
 	zend_string *case_name;
@@ -112,7 +92,7 @@ static uint8_t websocket_message_type_opcode(zval *type)
 	return WEBSOCKET_OPCODE_TEXT;
 }
 
-static zend_object *websocket_message_type_from_opcode(uint8_t opcode)
+zend_object *websocket_protocol_message_type_from_opcode(uint8_t opcode)
 {
 	const char *name;
 
@@ -174,7 +154,7 @@ static zend_always_inline void websocket_mask_payload_copy(unsigned char *dst, c
 	}
 }
 
-static zend_string *websocket_pack_payload(zend_string *payload, uint8_t opcode, uint8_t flags)
+zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcode, uint8_t flags)
 {
 	size_t payload_len = ZSTR_LEN(payload);
 	size_t header_len = 2;
@@ -294,7 +274,7 @@ static zend_always_inline void websocket_close_frame_init_properties(zval *objec
 	ZVAL_LONG(property, bytes_consumed);
 }
 
-static zend_string *websocket_close_payload(zend_long code, zend_string *reason)
+zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reason)
 {
 	if (ZSTR_LEN(reason) > WEBSOCKET_CLOSE_REASON_MAX_LEN) {
 		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
@@ -325,7 +305,7 @@ PHP_METHOD(WebSocket_Frame, __construct)
 		Z_PARAM_BOOL(final)
 	ZEND_PARSE_PARAMETERS_END();
 
-	const zend_long opcode = websocket_message_type_opcode(type);
+	const zend_long opcode = websocket_protocol_message_type_opcode(type);
 	const zend_long flags = final ? WEBSOCKET_FLAG_FIN : 0;
 
 	websocket_frame_update_properties(ZEND_THIS, type, payload, final, 0, opcode, flags);
@@ -380,13 +360,13 @@ PHP_METHOD(WebSocket_Protocol, encode)
 	ZEND_PARSE_PARAMETERS_END();
 
 	if (type) {
-		opcode = websocket_message_type_opcode(type);
+		opcode = websocket_protocol_message_type_opcode(type);
 	}
 	if (masked) {
 		flags |= WEBSOCKET_FLAG_MASK;
 	}
 
-	RETURN_STR(websocket_pack_payload(payload, opcode, flags));
+	RETURN_STR(websocket_protocol_pack_payload(payload, opcode, flags));
 }
 
 PHP_METHOD(WebSocket_Protocol, pack)
@@ -429,7 +409,7 @@ PHP_METHOD(WebSocket_Protocol, pack)
 
 		prop = zend_read_property(websocket_close_frame_ce, Z_OBJ_P(data), "reason", sizeof("reason") - 1, 0, &rv);
 		reason = zval_get_string(prop);
-		payload = websocket_close_payload(code, reason);
+		payload = websocket_protocol_close_payload(code, reason);
 		zend_string_release(reason);
 		if (!payload) {
 			RETURN_THROWS();
@@ -444,7 +424,7 @@ PHP_METHOD(WebSocket_Protocol, pack)
 		RETURN_THROWS();
 	}
 
-	if (!websocket_opcode_is_valid(opcode)) {
+	if (!websocket_protocol_opcode_is_valid(opcode)) {
 		zend_argument_value_error(2, "must be a valid WebSocket opcode");
 		if (tmp_payload) {
 			zend_string_release(tmp_payload);
@@ -452,7 +432,7 @@ PHP_METHOD(WebSocket_Protocol, pack)
 		RETURN_THROWS();
 	}
 
-	if (websocket_opcode_is_control(opcode) && !(flags & WEBSOCKET_FLAG_FIN)) {
+	if (websocket_protocol_opcode_is_control(opcode) && !(flags & WEBSOCKET_FLAG_FIN)) {
 		zend_argument_value_error(3, "must include FIN for control frames");
 		if (tmp_payload) {
 			zend_string_release(tmp_payload);
@@ -460,7 +440,7 @@ PHP_METHOD(WebSocket_Protocol, pack)
 		RETURN_THROWS();
 	}
 
-	if (websocket_opcode_is_control(opcode) && ZSTR_LEN(payload) > 125) {
+	if (websocket_protocol_opcode_is_control(opcode) && ZSTR_LEN(payload) > 125) {
 		zend_argument_value_error(1, "control frame payload must be at most 125 bytes");
 		if (tmp_payload) {
 			zend_string_release(tmp_payload);
@@ -468,7 +448,7 @@ PHP_METHOD(WebSocket_Protocol, pack)
 		RETURN_THROWS();
 	}
 
-	RETVAL_STR(websocket_pack_payload(payload, (uint8_t) opcode, (uint8_t) (flags & WEBSOCKET_FLAGS_ALL)));
+	RETVAL_STR(websocket_protocol_pack_payload(payload, (uint8_t) opcode, (uint8_t) (flags & WEBSOCKET_FLAGS_ALL)));
 
 	if (tmp_payload) {
 		zend_string_release(tmp_payload);
@@ -555,12 +535,12 @@ static void websocket_protocol_unpack(INTERNAL_FUNCTION_PARAMETERS)
 		RETURN_NULL();
 	}
 
-	if (!websocket_opcode_is_valid(opcode)) {
+	if (!websocket_protocol_opcode_is_valid(opcode)) {
 		zend_throw_error(NULL, "Unsupported WebSocket opcode %u", opcode);
 		RETURN_THROWS();
 	}
 
-	if (websocket_opcode_is_control(opcode) && (!final || payload_len > 125)) {
+	if (websocket_protocol_opcode_is_control(opcode) && (!final || payload_len > 125)) {
 		zend_throw_error(NULL, "Invalid WebSocket control frame");
 		RETURN_THROWS();
 	}
@@ -597,7 +577,7 @@ static void websocket_protocol_unpack(INTERNAL_FUNCTION_PARAMETERS)
 		return;
 	}
 
-	type_case = websocket_message_type_from_opcode(opcode);
+	type_case = websocket_protocol_message_type_from_opcode(opcode);
 	if (!type_case) {
 		zend_string_release(payload);
 		zend_throw_error(NULL, "Unsupported WebSocket opcode %u", opcode);
