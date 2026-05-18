@@ -30,10 +30,10 @@ Recommended process managers:
 Set explicit limits for your workload:
 
 ```php
-$server = new WebSocket\Server([
-    'maxMessageSize' => 1024 * 1024,
-    'maxQueuedBytes' => 8 * 1024 * 1024,
-]);
+$server = new WebSocket\Server(new WebSocket\ServerOptions(
+    maxMessageSize: 1024 * 1024,
+    maxQueuedBytes: 8 * 1024 * 1024,
+));
 ```
 
 `maxMessageSize` protects incoming frames and fragmented messages. `maxQueuedBytes` protects memory when a client reads slowly and outgoing writes need to be queued.

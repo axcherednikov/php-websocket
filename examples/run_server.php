@@ -12,6 +12,7 @@ use WebSocket\Connection;
 use WebSocket\MessageType;
 use WebSocket\Protocol;
 use WebSocket\Server;
+use WebSocket\ServerOptions;
 
 if (!extension_loaded('websocket')) {
     fwrite(STDERR, "The websocket extension is not loaded.\n");
@@ -27,9 +28,9 @@ if ($port < 1 || $port > 65535) {
     exit(1);
 }
 
-$server = new Server([
-    'maxMessageSize' => 1024 * 1024,
-]);
+$server = new Server(new ServerOptions(
+    maxMessageSize: 1024 * 1024,
+));
 
 $server->listen($host, $port);
 

@@ -42,7 +42,7 @@ $serverCode = <<<'PHP'
 use WebSocket\Connection;
 use WebSocket\Server;
 
-$server = new Server(['maxMessageSize' => 5]);
+$server = new Server(new WebSocket\ServerOptions(maxMessageSize: 5));
 $server->listen('127.0.0.1', PORT_PLACEHOLDER);
 
 $server->onOpen(static function (Connection $connection): void {

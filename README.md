@@ -4,7 +4,7 @@ Native WebSocket extension for PHP.
 
 `ext-websocket` keeps RFC 6455 protocol work in C and exposes a small PHP API for synchronous PHP code, async runtimes, and the native server runtime included in the extension.
 
-Current version: `0.9.1`.
+Current version: `0.10.0`.
 
 ## Requirements
 
@@ -104,11 +104,13 @@ Options:
 | `maxMessageSize` | Maximum incoming text/binary message size; defaults to 16 MiB |
 | `maxQueuedBytes` | Maximum outgoing queued bytes per connection; defaults to 16 MiB |
 
+Prefer `WebSocket\ServerOptions` for explicit configuration. Associative arrays remain supported for compatibility.
+
 Methods:
 
 | Method | Description |
 |---|---|
-| `__construct(array $options = [])` | Create a server |
+| `__construct(ServerOptions\|array $options = [])` | Create a server |
 | `listen(string $host, int $port): void` | Bind address for `run()` |
 | `onOpen(Closure $handler): void` | Register upgraded connection callback |
 | `onMessage(Closure $handler): void` | Register text/binary message callback |

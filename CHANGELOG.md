@@ -2,6 +2,17 @@
 
 All notable changes to ext-websocket are documented here.
 
+## 0.10.0 - 2026-05-18
+
+### Added
+
+- Added `WebSocket\ServerOptions` for typed server configuration.
+
+### Changed
+
+- Updated `WebSocket\Server` to accept `ServerOptions` while keeping array options supported.
+- Updated examples and production documentation to prefer `ServerOptions`.
+
 ## 0.9.1 - 2026-05-18
 
 ### Added
