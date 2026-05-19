@@ -4,8 +4,6 @@ Native WebSocket extension for PHP.
 
 `ext-websocket` keeps RFC 6455 protocol work in C and exposes a small PHP API for synchronous PHP code, async runtimes, and the native server runtime included in the extension.
 
-Current version: `0.10.0`.
-
 ## Requirements
 
 - PHP >= 8.1

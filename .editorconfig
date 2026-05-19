@@ -1,0 +1,18 @@
+# https://editorconfig.org/
+
+root = true
+
+[*]
+trim_trailing_whitespace = true
+insert_final_newline     = true
+end_of_line              = lf
+charset                  = utf-8
+tab_width                = 4
+
+[{*.{c,h,m4},Makefile*}]
+indent_size              = 4
+indent_style             = tab
+
+[*.{md,php,phpt,stub.php,yml}]
+indent_size              = 4
+indent_style             = space

@@ -115,6 +115,7 @@ static int websocket_kqueue_wait(const int timeout_usec, int *ready_fd)
 {
 	struct kevent event;
 	struct timespec timeout;
+	int ready;
 
 	if (kqueue_fd < 0) {
 		errno = EBADF;
@@ -124,7 +125,7 @@ static int websocket_kqueue_wait(const int timeout_usec, int *ready_fd)
 	timeout.tv_sec = timeout_usec / 1000000;
 	timeout.tv_nsec = (timeout_usec % 1000000) * 1000;
 
-	const int ready = kevent(kqueue_fd, NULL, 0, &event, 1, &timeout);
+	ready = kevent(kqueue_fd, NULL, 0, &event, 1, &timeout);
 	if (ready < 0) {
 		return -1;
 	}

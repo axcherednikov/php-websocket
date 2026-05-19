@@ -452,6 +452,7 @@ PHP_METHOD(WebSocket_Connection, send)
 	zend_string *payload;
 	zval *type = NULL;
 	websocket_connection_object *intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
+	uint8_t opcode;
 
 	ZEND_PARSE_PARAMETERS_START(1, 2)
 		Z_PARAM_STR(payload)
@@ -469,7 +470,7 @@ PHP_METHOD(WebSocket_Connection, send)
 		RETURN_THROWS();
 	}
 
-	const uint8_t opcode = type ? websocket_protocol_message_type_opcode(type) : WEBSOCKET_OPCODE_TEXT;
+	opcode = type ? websocket_protocol_message_type_opcode(type) : WEBSOCKET_OPCODE_TEXT;
 	if (opcode == WEBSOCKET_OPCODE_CONTINUATION) {
 		zend_argument_value_error(2, "must not be WebSocket\\MessageType::Continuation");
 		RETURN_THROWS();
@@ -489,6 +490,7 @@ PHP_METHOD(WebSocket_Connection, close)
 {
 	zend_long code = 1000;
 	zend_string *reason = NULL;
+	websocket_connection_object *intern;
 
 	if (ZEND_NUM_ARGS() > 0) {
 		ZEND_PARSE_PARAMETERS_START(0, 2)
@@ -511,7 +513,7 @@ PHP_METHOD(WebSocket_Connection, close)
 		RETURN_THROWS();
 	}
 
-	websocket_connection_object *intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
+	intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
 	if (intern->defer_close) {
 		intern->open = false;
 		return;
@@ -526,9 +528,11 @@ PHP_METHOD(WebSocket_Connection, close)
 
 PHP_METHOD(WebSocket_Connection, isOpen)
 {
+	websocket_connection_object *intern;
+
 	ZEND_PARSE_PARAMETERS_NONE();
 
-	websocket_connection_object *intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
+	intern = Z_WEBSOCKET_CONNECTION_P(ZEND_THIS);
 
 	RETURN_BOOL(intern->open && !intern->close_after_write);
 }
