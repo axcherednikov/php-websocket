@@ -152,6 +152,7 @@ static int websocket_select_wait(const int timeout_usec, int *ready_fd)
 	struct timeval timeout;
 	int max_fd = -1;
 	size_t i;
+	int ready;
 
 	if (select_fd_count == 0) {
 		errno = EBADF;
@@ -175,7 +176,7 @@ static int websocket_select_wait(const int timeout_usec, int *ready_fd)
 	timeout.tv_sec = timeout_usec / 1000000;
 	timeout.tv_usec = timeout_usec % 1000000;
 
-	const int ready = select(max_fd + 1, &read_fds, &write_fds, NULL, &timeout);
+	ready = select(max_fd + 1, &read_fds, &write_fds, NULL, &timeout);
 	if (ready <= 0) {
 		return ready;
 	}

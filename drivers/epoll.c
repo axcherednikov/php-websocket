@@ -110,13 +110,14 @@ static void websocket_epoll_unwatch(const int fd)
 static int websocket_epoll_wait(const int timeout_usec, int *ready_fd)
 {
 	struct epoll_event event;
+	int ready;
 
 	if (epoll_fd < 0) {
 		errno = EBADF;
 		return -1;
 	}
 
-	const int ready = epoll_wait(epoll_fd, &event, 1, timeout_usec / 1000);
+	ready = epoll_wait(epoll_fd, &event, 1, timeout_usec / 1000);
 	if (ready > 0) {
 		*ready_fd = event.data.fd;
 	}

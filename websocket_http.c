@@ -97,7 +97,7 @@ static bool websocket_http_validate_request_line(const char *line, const size_t 
 	}
 
 	method_len = (size_t) (method_end - line);
-	if (!websocket_http_equals_ci(line, method_len, "GET", sizeof("GET") - 1)) {
+	if (!websocket_http_equals_ci(line, method_len, "GET", strlen("GET"))) {
 		return false;
 	}
 
@@ -115,7 +115,7 @@ static bool websocket_http_validate_request_line(const char *line, const size_t 
 	version_start = target_end + 1;
 	version_len = (size_t) ((line + line_len) - version_start);
 
-	return websocket_http_equals_ci(version_start, version_len, "HTTP/1.1", sizeof("HTTP/1.1") - 1);
+	return websocket_http_equals_ci(version_start, version_len, "HTTP/1.1", strlen("HTTP/1.1"));
 }
 
 static bool websocket_http_validate_key(const char *value, const size_t value_len, zend_string **accept_key)
@@ -212,13 +212,13 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 		websocket_http_trim(&name, &name_len);
 		websocket_http_trim(&value, &value_len);
 
-		if (websocket_http_equals_ci(name, name_len, "Upgrade", sizeof("Upgrade") - 1)) {
-			has_upgrade = websocket_http_header_contains_token(value, value_len, "websocket", sizeof("websocket") - 1);
-		} else if (websocket_http_equals_ci(name, name_len, "Connection", sizeof("Connection") - 1)) {
-			has_connection = websocket_http_header_contains_token(value, value_len, "upgrade", sizeof("upgrade") - 1);
-		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Version", sizeof("Sec-WebSocket-Version") - 1)) {
-			has_version = websocket_http_equals_ci(value, value_len, "13", sizeof("13") - 1);
-		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Key", sizeof("Sec-WebSocket-Key") - 1)) {
+		if (websocket_http_equals_ci(name, name_len, "Upgrade", strlen("Upgrade"))) {
+			has_upgrade = websocket_http_header_contains_token(value, value_len, "websocket", strlen("websocket"));
+		} else if (websocket_http_equals_ci(name, name_len, "Connection", strlen("Connection"))) {
+			has_connection = websocket_http_header_contains_token(value, value_len, "upgrade", strlen("upgrade"));
+		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Version", strlen("Sec-WebSocket-Version"))) {
+			has_version = websocket_http_equals_ci(value, value_len, "13", strlen("13"));
+		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Key", strlen("Sec-WebSocket-Key"))) {
 			if (*accept_key) {
 				zend_string_release(*accept_key);
 				*accept_key = NULL;

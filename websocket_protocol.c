@@ -10,6 +10,8 @@
 #include "ext/standard/sha1.h"
 #include "Zend/zend_enum.h"
 
+#include <string.h>
+
 #define WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
 static uint32_t websocket_frame_prop_type_num;
@@ -30,7 +32,7 @@ zend_string *websocket_protocol_accept_key(zend_string *key)
 
 	PHP_SHA1Init(&ctx);
 	PHP_SHA1Update(&ctx, (unsigned char *) ZSTR_VAL(key), ZSTR_LEN(key));
-	PHP_SHA1Update(&ctx, (unsigned char *) WEBSOCKET_GUID, sizeof(WEBSOCKET_GUID) - 1);
+	PHP_SHA1Update(&ctx, (unsigned char *) WEBSOCKET_GUID, strlen(WEBSOCKET_GUID));
 	PHP_SHA1Final(digest, &ctx);
 
 	return php_base64_encode(digest, sizeof(digest));
@@ -223,12 +225,12 @@ zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcod
 
 static void websocket_frame_update_properties(zval *object, zval *type, zend_string *payload, bool final, zend_long bytes_consumed, zend_long opcode, zend_long flags)
 {
-	zend_update_property(websocket_frame_ce, Z_OBJ_P(object), "type", sizeof("type") - 1, type);
-	zend_update_property_long(websocket_frame_ce, Z_OBJ_P(object), "opcode", sizeof("opcode") - 1, opcode);
-	zend_update_property_long(websocket_frame_ce, Z_OBJ_P(object), "flags", sizeof("flags") - 1, flags);
-	zend_update_property_str(websocket_frame_ce, Z_OBJ_P(object), "payload", sizeof("payload") - 1, payload);
-	zend_update_property_bool(websocket_frame_ce, Z_OBJ_P(object), "final", sizeof("final") - 1, final);
-	zend_update_property_long(websocket_frame_ce, Z_OBJ_P(object), "bytesConsumed", sizeof("bytesConsumed") - 1, bytes_consumed);
+	zend_update_property(websocket_frame_ce, Z_OBJ_P(object), "type", strlen("type"), type);
+	zend_update_property_long(websocket_frame_ce, Z_OBJ_P(object), "opcode", strlen("opcode"), opcode);
+	zend_update_property_long(websocket_frame_ce, Z_OBJ_P(object), "flags", strlen("flags"), flags);
+	zend_update_property_str(websocket_frame_ce, Z_OBJ_P(object), "payload", strlen("payload"), payload);
+	zend_update_property_bool(websocket_frame_ce, Z_OBJ_P(object), "final", strlen("final"), final);
+	zend_update_property_long(websocket_frame_ce, Z_OBJ_P(object), "bytesConsumed", strlen("bytesConsumed"), bytes_consumed);
 }
 
 static zend_always_inline void websocket_frame_init_properties(zval *object, zval *type, zend_string *payload, bool final, zend_long bytes_consumed, zend_long opcode, zend_long flags)
@@ -256,10 +258,10 @@ static zend_always_inline void websocket_frame_init_properties(zval *object, zva
 
 static void websocket_close_frame_update_properties(zval *object, zend_long code, zend_string *reason, zend_long flags, zend_long bytes_consumed)
 {
-	zend_update_property_long(websocket_close_frame_ce, Z_OBJ_P(object), "code", sizeof("code") - 1, code);
-	zend_update_property_str(websocket_close_frame_ce, Z_OBJ_P(object), "reason", sizeof("reason") - 1, reason);
-	zend_update_property_long(websocket_close_frame_ce, Z_OBJ_P(object), "flags", sizeof("flags") - 1, flags);
-	zend_update_property_long(websocket_close_frame_ce, Z_OBJ_P(object), "bytesConsumed", sizeof("bytesConsumed") - 1, bytes_consumed);
+	zend_update_property_long(websocket_close_frame_ce, Z_OBJ_P(object), "code", strlen("code"), code);
+	zend_update_property_str(websocket_close_frame_ce, Z_OBJ_P(object), "reason", strlen("reason"), reason);
+	zend_update_property_long(websocket_close_frame_ce, Z_OBJ_P(object), "flags", strlen("flags"), flags);
+	zend_update_property_long(websocket_close_frame_ce, Z_OBJ_P(object), "bytesConsumed", strlen("bytesConsumed"), bytes_consumed);
 }
 
 static zend_always_inline void websocket_close_frame_init_properties(zval *object, zend_long code, zend_string *reason, zend_long flags, zend_long bytes_consumed)
@@ -281,12 +283,14 @@ static zend_always_inline void websocket_close_frame_init_properties(zval *objec
 
 zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reason)
 {
+	zend_string *payload;
+
 	if (ZSTR_LEN(reason) > WEBSOCKET_CLOSE_REASON_MAX_LEN) {
 		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
 		return NULL;
 	}
 
-	zend_string *payload = zend_string_alloc(2 + ZSTR_LEN(reason), 0);
+	payload = zend_string_alloc(2 + ZSTR_LEN(reason), 0);
 	ZSTR_VAL(payload)[0] = (char) ((code >> 8) & 0xff);
 	ZSTR_VAL(payload)[1] = (char) (code & 0xff);
 	if (ZSTR_LEN(reason) > 0) {
@@ -302,6 +306,8 @@ PHP_METHOD(WebSocket_Frame, __construct)
 	zval *type;
 	zend_string *payload;
 	bool final = true;
+	zend_long opcode;
+	zend_long flags;
 
 	ZEND_PARSE_PARAMETERS_START(2, 3)
 		Z_PARAM_OBJECT_OF_CLASS(type, websocket_message_type_ce)
@@ -310,8 +316,8 @@ PHP_METHOD(WebSocket_Frame, __construct)
 		Z_PARAM_BOOL(final)
 	ZEND_PARSE_PARAMETERS_END();
 
-	const zend_long opcode = websocket_protocol_message_type_opcode(type);
-	const zend_long flags = final ? WEBSOCKET_FLAG_FIN : 0;
+	opcode = websocket_protocol_message_type_opcode(type);
+	flags = final ? WEBSOCKET_FLAG_FIN : 0;
 
 	websocket_frame_update_properties(ZEND_THIS, type, payload, final, 0, opcode, flags);
 }
@@ -396,23 +402,23 @@ PHP_METHOD(WebSocket_Protocol, pack)
 	} else if (Z_TYPE_P(data) == IS_OBJECT && instanceof_function(Z_OBJCE_P(data), websocket_frame_ce)) {
 		zval *prop;
 
-		prop = zend_read_property(websocket_frame_ce, Z_OBJ_P(data), "payload", sizeof("payload") - 1, 0, &rv);
+		prop = zend_read_property(websocket_frame_ce, Z_OBJ_P(data), "payload", strlen("payload"), 0, &rv);
 		payload = zval_get_string(prop);
 		tmp_payload = payload;
 
-		prop = zend_read_property(websocket_frame_ce, Z_OBJ_P(data), "opcode", sizeof("opcode") - 1, 0, &rv);
+		prop = zend_read_property(websocket_frame_ce, Z_OBJ_P(data), "opcode", strlen("opcode"), 0, &rv);
 		opcode = zval_get_long(prop);
 
-		prop = zend_read_property(websocket_frame_ce, Z_OBJ_P(data), "flags", sizeof("flags") - 1, 0, &rv);
+		prop = zend_read_property(websocket_frame_ce, Z_OBJ_P(data), "flags", strlen("flags"), 0, &rv);
 		flags = zval_get_long(prop);
 	} else if (Z_TYPE_P(data) == IS_OBJECT && instanceof_function(Z_OBJCE_P(data), websocket_close_frame_ce)) {
 		zval *prop;
 		zend_long code;
 
-		prop = zend_read_property(websocket_close_frame_ce, Z_OBJ_P(data), "code", sizeof("code") - 1, 0, &rv);
+		prop = zend_read_property(websocket_close_frame_ce, Z_OBJ_P(data), "code", strlen("code"), 0, &rv);
 		code = zval_get_long(prop);
 
-		prop = zend_read_property(websocket_close_frame_ce, Z_OBJ_P(data), "reason", sizeof("reason") - 1, 0, &rv);
+		prop = zend_read_property(websocket_close_frame_ce, Z_OBJ_P(data), "reason", strlen("reason"), 0, &rv);
 		reason = zval_get_string(prop);
 		payload = websocket_protocol_close_payload(code, reason);
 		zend_string_release(reason);
@@ -421,7 +427,7 @@ PHP_METHOD(WebSocket_Protocol, pack)
 		}
 		tmp_payload = payload;
 
-		prop = zend_read_property(websocket_close_frame_ce, Z_OBJ_P(data), "flags", sizeof("flags") - 1, 0, &rv);
+		prop = zend_read_property(websocket_close_frame_ce, Z_OBJ_P(data), "flags", strlen("flags"), 0, &rv);
 		flags = zval_get_long(prop);
 		opcode = WEBSOCKET_OPCODE_CLOSE;
 	} else {
@@ -566,9 +572,10 @@ static void websocket_protocol_unpack(INTERNAL_FUNCTION_PARAMETERS)
 	if (opcode == WEBSOCKET_OPCODE_CLOSE) {
 		zend_long code = WEBSOCKET_CLOSE_NORMAL;
 		zend_string *reason;
+		unsigned char *close_payload;
 
 		if (payload_len >= 2) {
-			unsigned char *close_payload = (unsigned char *) ZSTR_VAL(payload);
+			close_payload = (unsigned char *) ZSTR_VAL(payload);
 			code = ((zend_long) close_payload[0] << 8) | close_payload[1];
 			reason = zend_string_init(ZSTR_VAL(payload) + 2, (size_t) payload_len - 2, 0);
 		} else {
@@ -613,14 +620,14 @@ void websocket_register_protocol_classes(void)
 	websocket_close_frame_ce = register_class_WebSocket_CloseFrame();
 	websocket_protocol_ce = register_class_WebSocket_Protocol();
 
-	websocket_frame_prop_type_num = websocket_property_num(websocket_frame_ce, "type", sizeof("type") - 1);
-	websocket_frame_prop_opcode_num = websocket_property_num(websocket_frame_ce, "opcode", sizeof("opcode") - 1);
-	websocket_frame_prop_flags_num = websocket_property_num(websocket_frame_ce, "flags", sizeof("flags") - 1);
-	websocket_frame_prop_payload_num = websocket_property_num(websocket_frame_ce, "payload", sizeof("payload") - 1);
-	websocket_frame_prop_final_num = websocket_property_num(websocket_frame_ce, "final", sizeof("final") - 1);
-	websocket_frame_prop_bytes_consumed_num = websocket_property_num(websocket_frame_ce, "bytesConsumed", sizeof("bytesConsumed") - 1);
-	websocket_close_frame_prop_code_num = websocket_property_num(websocket_close_frame_ce, "code", sizeof("code") - 1);
-	websocket_close_frame_prop_reason_num = websocket_property_num(websocket_close_frame_ce, "reason", sizeof("reason") - 1);
-	websocket_close_frame_prop_flags_num = websocket_property_num(websocket_close_frame_ce, "flags", sizeof("flags") - 1);
-	websocket_close_frame_prop_bytes_consumed_num = websocket_property_num(websocket_close_frame_ce, "bytesConsumed", sizeof("bytesConsumed") - 1);
+	websocket_frame_prop_type_num = websocket_property_num(websocket_frame_ce, "type", strlen("type"));
+	websocket_frame_prop_opcode_num = websocket_property_num(websocket_frame_ce, "opcode", strlen("opcode"));
+	websocket_frame_prop_flags_num = websocket_property_num(websocket_frame_ce, "flags", strlen("flags"));
+	websocket_frame_prop_payload_num = websocket_property_num(websocket_frame_ce, "payload", strlen("payload"));
+	websocket_frame_prop_final_num = websocket_property_num(websocket_frame_ce, "final", strlen("final"));
+	websocket_frame_prop_bytes_consumed_num = websocket_property_num(websocket_frame_ce, "bytesConsumed", strlen("bytesConsumed"));
+	websocket_close_frame_prop_code_num = websocket_property_num(websocket_close_frame_ce, "code", strlen("code"));
+	websocket_close_frame_prop_reason_num = websocket_property_num(websocket_close_frame_ce, "reason", strlen("reason"));
+	websocket_close_frame_prop_flags_num = websocket_property_num(websocket_close_frame_ce, "flags", strlen("flags"));
+	websocket_close_frame_prop_bytes_consumed_num = websocket_property_num(websocket_close_frame_ce, "bytesConsumed", strlen("bytesConsumed"));
 }

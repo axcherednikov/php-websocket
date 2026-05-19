@@ -128,13 +128,14 @@ static void websocket_poll_unwatch(const int fd)
 static int websocket_poll_wait(const int timeout_usec, int *ready_fd)
 {
 	size_t i;
+	int ready;
 
 	if (poll_fd_count == 0) {
 		errno = EBADF;
 		return -1;
 	}
 
-	const int ready = poll(poll_fds, (nfds_t) poll_fd_count, timeout_usec / 1000);
+	ready = poll(poll_fds, (nfds_t) poll_fd_count, timeout_usec / 1000);
 	if (ready <= 0) {
 		return ready;
 	}

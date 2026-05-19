@@ -117,8 +117,8 @@ PHP_METHOD(WebSocket_ServerOptions, __construct)
 		RETURN_THROWS();
 	}
 
-	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxMessageSize", sizeof("maxMessageSize") - 1, max_message_size);
-	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxQueuedBytes", sizeof("maxQueuedBytes") - 1, max_queued_bytes);
+	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxMessageSize", strlen("maxMessageSize"), max_message_size);
+	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxQueuedBytes", strlen("maxQueuedBytes"), max_queued_bytes);
 }
 
 PHP_METHOD(WebSocket_Server, listen)

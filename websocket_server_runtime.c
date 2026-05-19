@@ -130,6 +130,7 @@ static int websocket_server_create_listener(websocket_server_object *intern)
 	char port[16];
 	int listener_fd = -1;
 	int last_errno = 0;
+	int error;
 
 	memset(&hints, 0, sizeof(hints));
 	hints.ai_family = AF_UNSPEC;
@@ -138,7 +139,7 @@ static int websocket_server_create_listener(websocket_server_object *intern)
 
 	snprintf(port, sizeof(port), "%ld", (long) intern->port);
 
-	const int error = getaddrinfo(ZSTR_VAL(intern->host), port, &hints, &addresses);
+	error = getaddrinfo(ZSTR_VAL(intern->host), port, &hints, &addresses);
 	if (error != 0) {
 		zend_throw_error(NULL, "Cannot resolve WebSocket listen address %s:%ld: %s", ZSTR_VAL(intern->host), (long) intern->port, gai_strerror(error));
 		return -1;
@@ -371,19 +372,20 @@ static size_t websocket_server_max_message_size(websocket_server_object *intern)
 {
 	zval *value;
 	zval rv;
+	zend_long max_message_size;
 
 	if (Z_TYPE(intern->options) == IS_ARRAY) {
-		value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxMessageSize", sizeof("maxMessageSize") - 1);
+		value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxMessageSize", strlen("maxMessageSize"));
 		if (!value) {
 			return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
 		}
 	} else if (Z_TYPE(intern->options) == IS_OBJECT && instanceof_function(Z_OBJCE(intern->options), websocket_server_options_ce)) {
-		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), "maxMessageSize", sizeof("maxMessageSize") - 1, 0, &rv);
+		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), "maxMessageSize", strlen("maxMessageSize"), 0, &rv);
 	} else {
 		return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
 	}
 
-	const zend_long max_message_size = zval_get_long(value);
+	max_message_size = zval_get_long(value);
 	if (max_message_size <= 0) {
 		return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
 	}
@@ -395,19 +397,20 @@ static size_t websocket_server_max_queued_bytes(websocket_server_object *intern)
 {
 	zval *value;
 	zval rv;
+	zend_long max_queued_bytes;
 
 	if (Z_TYPE(intern->options) == IS_ARRAY) {
-		value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxQueuedBytes", sizeof("maxQueuedBytes") - 1);
+		value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxQueuedBytes", strlen("maxQueuedBytes"));
 		if (!value) {
 			return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
 		}
 	} else if (Z_TYPE(intern->options) == IS_OBJECT && instanceof_function(Z_OBJCE(intern->options), websocket_server_options_ce)) {
-		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), "maxQueuedBytes", sizeof("maxQueuedBytes") - 1, 0, &rv);
+		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), "maxQueuedBytes", strlen("maxQueuedBytes"), 0, &rv);
 	} else {
 		return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
 	}
 
-	const zend_long max_queued_bytes = zval_get_long(value);
+	max_queued_bytes = zval_get_long(value);
 	if (max_queued_bytes <= 0) {
 		return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
 	}
