@@ -68,6 +68,15 @@ try {
 } catch (\ValueError $e) {
     var_dump($e instanceof \ValueError);
 }
+
+foreach ([1004, 1005, 1006, 1015] as $code) {
+    try {
+        new CloseFrame($code);
+    } catch (\ValueError $e) {
+        var_dump($e instanceof \ValueError);
+    }
+}
+
 ?>
 --EXPECT--
 int(0)
@@ -92,4 +101,8 @@ bool(true)
 bool(true)
 bool(true)
 string(2) "ff"
+bool(true)
+bool(true)
+bool(true)
+bool(true)
 bool(true)

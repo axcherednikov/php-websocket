@@ -182,6 +182,7 @@ uint8_t websocket_protocol_message_type_opcode(zval *type);
 zend_object *websocket_protocol_message_type_from_opcode(uint8_t opcode);
 bool websocket_protocol_opcode_is_valid(zend_long opcode);
 bool websocket_protocol_opcode_is_control(zend_long opcode);
+bool websocket_protocol_close_code_is_valid(zend_long code);
 bool websocket_protocol_is_valid_utf8(const char *payload, size_t payload_len);
 zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcode, uint8_t flags);
 zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reason);

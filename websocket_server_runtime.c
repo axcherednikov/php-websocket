@@ -512,23 +512,6 @@ static zend_always_inline void websocket_server_mask_payload(unsigned char *dst,
 	}
 }
 
-static bool websocket_server_close_code_is_valid(const zend_long code)
-{
-	if (code < 1000 || code > 4999) {
-		return false;
-	}
-
-	switch (code) {
-		case 1004:
-		case 1005:
-		case 1006:
-		case 1015:
-			return false;
-		default:
-			return true;
-	}
-}
-
 static websocket_server_frame_status websocket_server_parse_frame(websocket_connection_object *connection_obj, const size_t max_message_size, websocket_server_frame *frame)
 {
 	const unsigned char *in = (const unsigned char *) connection_obj->read_buffer;
@@ -614,7 +597,7 @@ static websocket_server_frame_status websocket_server_parse_frame(websocket_conn
 		if (payload_len >= 2) {
 			const zend_long close_code = ((zend_long) (in[pos] ^ mask[0]) << 8) | (zend_long) (in[pos + 1] ^ mask[1]);
 
-			if (!websocket_server_close_code_is_valid(close_code)) {
+			if (!websocket_protocol_close_code_is_valid(close_code)) {
 				return WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR;
 			}
 		}

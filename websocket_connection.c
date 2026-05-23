@@ -510,8 +510,8 @@ PHP_METHOD(WebSocket_Connection, close)
 			Z_PARAM_STR(reason)
 		ZEND_PARSE_PARAMETERS_END();
 
-		if (code < 1000 || code > 4999) {
-			zend_argument_value_error(1, "must be between 1000 and 4999");
+		if (!websocket_protocol_close_code_is_valid(code)) {
+			zend_argument_value_error(1, "must be a valid WebSocket close code");
 			RETURN_THROWS();
 		}
 	}
