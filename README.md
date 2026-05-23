@@ -116,6 +116,7 @@ Methods:
 | `__construct(ServerOptions\|array $options = [])` | Create a server |
 | `listen(string $host, int $port): void` | Bind address for `run()` |
 | `subprotocols(string ...$protocols): void` | Configure supported `Sec-WebSocket-Protocol` tokens |
+| `onHandshake(Closure $handler): void` | Accept or reject valid HTTP Upgrade requests before `101 Switching Protocols` |
 | `onOpen(Closure $handler): void` | Register upgraded connection callback |
 | `onMessage(Closure $handler): void` | Register text/binary message callback |
 | `onClose(Closure $handler): void` | Register close callback |
@@ -123,6 +124,43 @@ Methods:
 | `run(): void` | Start accept, HTTP Upgrade, and frame processing loop |
 | `stop(): void` | Request shutdown |
 | `getDriver(): string` | Return selected I/O driver |
+
+Handshake callbacks receive a `WebSocket\Request`. Return normally to continue the WebSocket upgrade, or throw `WebSocket\HandshakeException` to reject it before `101 Switching Protocols` is sent:
+
+```php
+$server->onHandshake(static function (WebSocket\Request $request): void {
+    if ($request->header('Origin') !== 'https://app.test') {
+        throw new WebSocket\HandshakeException(
+            new WebSocket\HandshakeResponse(403, ['X-Reject' => 'origin'])
+        );
+    }
+});
+```
+
+### `WebSocket\Request`
+
+| Method / property | Description |
+|---|---|
+| `header(string $name): ?string` | Return a case-insensitive request header value |
+| `readonly string $method` | HTTP request method |
+| `readonly string $target` | HTTP request target |
+| `readonly array $headers` | Lower-case request headers |
+
+### `WebSocket\HandshakeResponse`
+
+| Method / property | Description |
+|---|---|
+| `__construct(int $status = 403, array $headers = [], string $body = '')` | Create a custom handshake rejection response |
+| `readonly int $status` | HTTP status code |
+| `readonly array $headers` | HTTP response headers |
+| `readonly string $body` | HTTP response body |
+
+### `WebSocket\HandshakeException`
+
+| Method / property | Description |
+|---|---|
+| `__construct(?HandshakeResponse $response = null)` | Create a handshake rejection exception; defaults to `403 Forbidden` |
+| `readonly HandshakeResponse $response` | HTTP response sent before closing the connection |
 
 ### `WebSocket\Connection`
 

@@ -51,6 +51,17 @@ final class Server
     public function subprotocols(string ...$protocols): void {}
 
     /**
+     * Register a callback called after a valid HTTP Upgrade request is parsed
+     * and before the WebSocket handshake response is sent.
+     *
+     * Return normally to accept the handshake. Throw HandshakeException to
+     * reject it before the WebSocket upgrade response is sent.
+     *
+     * @param \Closure(Request):void $handler
+     */
+    public function onHandshake(\Closure $handler): void {}
+
+    /**
      * Register a callback called after a successful HTTP Upgrade.
      *
      * Returning false from the callback closes the accepted connection.
@@ -156,6 +167,77 @@ final class ServerOptions
         int $handshakeTimeoutMs = 10000,
         int $idleTimeoutMs = 120000,
     ) {}
+}
+
+/**
+ * HTTP Upgrade request passed to WebSocket\Server::onHandshake().
+ */
+final class Request
+{
+    /**
+     * Request method.
+     */
+    public readonly string $method;
+
+    /**
+     * Request target from the HTTP request line.
+     */
+    public readonly string $target;
+
+    /**
+     * Lower-case HTTP headers.
+     *
+     * @var array<string,string>
+     */
+    public readonly array $headers;
+
+    /**
+     * Return a header value by case-insensitive name, or null when absent.
+     */
+    public function header(string $name): ?string {}
+}
+
+/**
+ * HTTP response carried by HandshakeException to reject upgrade.
+ */
+final class HandshakeResponse
+{
+    /**
+     * HTTP status code.
+     */
+    public readonly int $status;
+
+    /**
+     * HTTP response headers.
+     *
+     * @var array<string,string>
+     */
+    public readonly array $headers;
+
+    /**
+     * HTTP response body.
+     */
+    public readonly string $body;
+
+    /**
+     * @param array $headers
+     *
+     * @throws \ValueError If the status or any header is invalid.
+     */
+    public function __construct(int $status = 403, array $headers = [], string $body = '') {}
+}
+
+/**
+ * Exception thrown from WebSocket\Server::onHandshake() to reject upgrade.
+ */
+final class HandshakeException extends \Exception
+{
+    /**
+     * HTTP response sent before closing the connection.
+     */
+    public readonly HandshakeResponse $response;
+
+    public function __construct(?HandshakeResponse $response = null) {}
 }
 
 /**

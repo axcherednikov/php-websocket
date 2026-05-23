@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 3b15a096ef5cc7eadc01a0f97ff128ced381089e */
+ * Stub hash: 6adb6001500f3acf211a163aa05ad143a2628fbc */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_Server___construct, 0, 0, 0)
 	ZEND_ARG_OBJ_TYPE_MASK(0, options, WebSocket\\ServerOptions, MAY_BE_ARRAY, "[]")
@@ -14,15 +14,17 @@ ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_subprotoc
 	ZEND_ARG_VARIADIC_TYPE_INFO(0, protocols, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
-ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_onOpen, 0, 1, IS_VOID, 0)
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_onHandshake, 0, 1, IS_VOID, 0)
 	ZEND_ARG_OBJ_INFO(0, handler, Closure, 0)
 ZEND_END_ARG_INFO()
 
-#define arginfo_class_WebSocket_Server_onMessage arginfo_class_WebSocket_Server_onOpen
+#define arginfo_class_WebSocket_Server_onOpen arginfo_class_WebSocket_Server_onHandshake
 
-#define arginfo_class_WebSocket_Server_onClose arginfo_class_WebSocket_Server_onOpen
+#define arginfo_class_WebSocket_Server_onMessage arginfo_class_WebSocket_Server_onHandshake
 
-#define arginfo_class_WebSocket_Server_onError arginfo_class_WebSocket_Server_onOpen
+#define arginfo_class_WebSocket_Server_onClose arginfo_class_WebSocket_Server_onHandshake
+
+#define arginfo_class_WebSocket_Server_onError arginfo_class_WebSocket_Server_onHandshake
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_run, 0, 0, IS_VOID, 0)
 ZEND_END_ARG_INFO()
@@ -38,6 +40,20 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_ServerOptions___construct, 0, 0, 
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, maxConnections, IS_LONG, 0, "10000")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, handshakeTimeoutMs, IS_LONG, 0, "10000")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, idleTimeoutMs, IS_LONG, 0, "120000")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Request_header, 0, 1, IS_STRING, 1)
+	ZEND_ARG_TYPE_INFO(0, name, IS_STRING, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_HandshakeResponse___construct, 0, 0, 0)
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, status, IS_LONG, 0, "403")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, headers, IS_ARRAY, 0, "[]")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, body, IS_STRING, 0, "\'\'")
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_HandshakeException___construct, 0, 0, 0)
+	ZEND_ARG_OBJ_INFO_WITH_DEFAULT_VALUE(0, response, WebSocket\\HandshakeResponse, 1, "null")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Connection_send, 0, 1, IS_VOID, 0)
@@ -89,6 +105,7 @@ ZEND_END_ARG_INFO()
 ZEND_METHOD(WebSocket_Server, __construct);
 ZEND_METHOD(WebSocket_Server, listen);
 ZEND_METHOD(WebSocket_Server, subprotocols);
+ZEND_METHOD(WebSocket_Server, onHandshake);
 ZEND_METHOD(WebSocket_Server, onOpen);
 ZEND_METHOD(WebSocket_Server, onMessage);
 ZEND_METHOD(WebSocket_Server, onClose);
@@ -97,6 +114,9 @@ ZEND_METHOD(WebSocket_Server, run);
 ZEND_METHOD(WebSocket_Server, stop);
 ZEND_METHOD(WebSocket_Server, getDriver);
 ZEND_METHOD(WebSocket_ServerOptions, __construct);
+ZEND_METHOD(WebSocket_Request, header);
+ZEND_METHOD(WebSocket_HandshakeResponse, __construct);
+ZEND_METHOD(WebSocket_HandshakeException, __construct);
 ZEND_METHOD(WebSocket_Connection, send);
 ZEND_METHOD(WebSocket_Connection, close);
 ZEND_METHOD(WebSocket_Connection, isOpen);
@@ -112,6 +132,7 @@ static const zend_function_entry class_WebSocket_Server_methods[] = {
 	ZEND_ME(WebSocket_Server, __construct, arginfo_class_WebSocket_Server___construct, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, listen, arginfo_class_WebSocket_Server_listen, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, subprotocols, arginfo_class_WebSocket_Server_subprotocols, ZEND_ACC_PUBLIC)
+	ZEND_ME(WebSocket_Server, onHandshake, arginfo_class_WebSocket_Server_onHandshake, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, onOpen, arginfo_class_WebSocket_Server_onOpen, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, onMessage, arginfo_class_WebSocket_Server_onMessage, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, onClose, arginfo_class_WebSocket_Server_onClose, ZEND_ACC_PUBLIC)
@@ -124,6 +145,21 @@ static const zend_function_entry class_WebSocket_Server_methods[] = {
 
 static const zend_function_entry class_WebSocket_ServerOptions_methods[] = {
 	ZEND_ME(WebSocket_ServerOptions, __construct, arginfo_class_WebSocket_ServerOptions___construct, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_WebSocket_Request_methods[] = {
+	ZEND_ME(WebSocket_Request, header, arginfo_class_WebSocket_Request_header, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_WebSocket_HandshakeResponse_methods[] = {
+	ZEND_ME(WebSocket_HandshakeResponse, __construct, arginfo_class_WebSocket_HandshakeResponse___construct, ZEND_ACC_PUBLIC)
+	ZEND_FE_END
+};
+
+static const zend_function_entry class_WebSocket_HandshakeException_methods[] = {
+	ZEND_ME(WebSocket_HandshakeException, __construct, arginfo_class_WebSocket_HandshakeException___construct, ZEND_ACC_PUBLIC)
 	ZEND_FE_END
 };
 
@@ -199,6 +235,79 @@ static zend_class_entry *register_class_WebSocket_ServerOptions(void)
 	zend_string *property_idleTimeoutMs_name = zend_string_init("idleTimeoutMs", sizeof("idleTimeoutMs") - 1, 1);
 	zend_declare_typed_property(class_entry, property_idleTimeoutMs_name, &property_idleTimeoutMs_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(property_idleTimeoutMs_name);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_WebSocket_Request(void)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "WebSocket", "Request", class_WebSocket_Request_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL);
+
+	zval property_method_default_value;
+	ZVAL_UNDEF(&property_method_default_value);
+	zend_string *property_method_name = zend_string_init("method", sizeof("method") - 1, 1);
+	zend_declare_typed_property(class_entry, property_method_name, &property_method_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
+	zend_string_release(property_method_name);
+
+	zval property_target_default_value;
+	ZVAL_UNDEF(&property_target_default_value);
+	zend_string *property_target_name = zend_string_init("target", sizeof("target") - 1, 1);
+	zend_declare_typed_property(class_entry, property_target_name, &property_target_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
+	zend_string_release(property_target_name);
+
+	zval property_headers_default_value;
+	ZVAL_UNDEF(&property_headers_default_value);
+	zend_string *property_headers_name = zend_string_init("headers", sizeof("headers") - 1, 1);
+	zend_declare_typed_property(class_entry, property_headers_name, &property_headers_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ARRAY));
+	zend_string_release(property_headers_name);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_WebSocket_HandshakeResponse(void)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "WebSocket", "HandshakeResponse", class_WebSocket_HandshakeResponse_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, NULL, ZEND_ACC_FINAL);
+
+	zval property_status_default_value;
+	ZVAL_UNDEF(&property_status_default_value);
+	zend_string *property_status_name = zend_string_init("status", sizeof("status") - 1, 1);
+	zend_declare_typed_property(class_entry, property_status_name, &property_status_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(property_status_name);
+
+	zval property_headers_default_value;
+	ZVAL_UNDEF(&property_headers_default_value);
+	zend_string *property_headers_name = zend_string_init("headers", sizeof("headers") - 1, 1);
+	zend_declare_typed_property(class_entry, property_headers_name, &property_headers_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_ARRAY));
+	zend_string_release(property_headers_name);
+
+	zval property_body_default_value;
+	ZVAL_UNDEF(&property_body_default_value);
+	zend_string *property_body_name = zend_string_init("body", sizeof("body") - 1, 1);
+	zend_declare_typed_property(class_entry, property_body_name, &property_body_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
+	zend_string_release(property_body_name);
+
+	return class_entry;
+}
+
+static zend_class_entry *register_class_WebSocket_HandshakeException(zend_class_entry *class_entry_Exception)
+{
+	zend_class_entry ce, *class_entry;
+
+	INIT_NS_CLASS_ENTRY(ce, "WebSocket", "HandshakeException", class_WebSocket_HandshakeException_methods);
+	class_entry = zend_register_internal_class_with_flags(&ce, class_entry_Exception, ZEND_ACC_FINAL);
+
+	zval property_response_default_value;
+	ZVAL_UNDEF(&property_response_default_value);
+	zend_string *property_response_name = zend_string_init("response", sizeof("response") - 1, 1);
+	zend_string *property_response_class_WebSocket_HandshakeResponse = zend_string_init("WebSocket\\HandshakeResponse", sizeof("WebSocket\\HandshakeResponse")-1, 1);
+	zend_declare_typed_property(class_entry, property_response_name, &property_response_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_CLASS(property_response_class_WebSocket_HandshakeResponse, 0, 0));
+	zend_string_release(property_response_name);
 
 	return class_entry;
 }

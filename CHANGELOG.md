@@ -2,6 +2,12 @@
 
 All notable changes to ext-websocket are documented here.
 
+## Unreleased
+
+### Added
+
+- Added `WebSocket\Server::onHandshake()` with `WebSocket\Request`, `WebSocket\HandshakeResponse`, and `WebSocket\HandshakeException` for pre-upgrade handshake validation.
+
 ## 1.2.1 - 2026-05-23
 
 ### Added
