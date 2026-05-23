@@ -70,6 +70,23 @@ bool websocket_protocol_opcode_is_control(zend_long opcode)
 	return opcode >= 0x8 && opcode <= 0xf;
 }
 
+bool websocket_protocol_close_code_is_valid(const zend_long code)
+{
+	if (code < 1000 || code > 4999) {
+		return false;
+	}
+
+	switch (code) {
+		case 1004:
+		case 1005:
+		case 1006:
+		case 1015:
+			return false;
+		default:
+			return true;
+	}
+}
+
 bool websocket_protocol_is_valid_utf8(const char *payload, const size_t payload_len)
 {
 	const unsigned char *bytes = (const unsigned char *) payload;
@@ -365,6 +382,10 @@ zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reaso
 {
 	zend_string *payload;
 
+	if (!websocket_protocol_close_code_is_valid(code)) {
+		zend_argument_value_error(1, "must be a valid WebSocket close code");
+		return NULL;
+	}
 	if (ZSTR_LEN(reason) > WEBSOCKET_CLOSE_REASON_MAX_LEN) {
 		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
 		return NULL;
@@ -419,6 +440,10 @@ PHP_METHOD(WebSocket_CloseFrame, __construct)
 
 	if (!reason) {
 		reason = ZSTR_EMPTY_ALLOC();
+	}
+	if (!websocket_protocol_close_code_is_valid(code)) {
+		zend_argument_value_error(1, "must be a valid WebSocket close code");
+		RETURN_THROWS();
 	}
 	if (ZSTR_LEN(reason) > WEBSOCKET_CLOSE_REASON_MAX_LEN) {
 		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
