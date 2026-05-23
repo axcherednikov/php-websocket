@@ -101,11 +101,17 @@ PHP_METHOD(WebSocket_ServerOptions, __construct)
 {
 	zend_long max_message_size = WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
 	zend_long max_queued_bytes = WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
+	zend_long max_connections = WEBSOCKET_DEFAULT_MAX_CONNECTIONS;
+	zend_long handshake_timeout_ms = WEBSOCKET_DEFAULT_HANDSHAKE_TIMEOUT_MS;
+	zend_long idle_timeout_ms = WEBSOCKET_DEFAULT_IDLE_TIMEOUT_MS;
 
-	ZEND_PARSE_PARAMETERS_START(0, 2)
+	ZEND_PARSE_PARAMETERS_START(0, 5)
 		Z_PARAM_OPTIONAL
 		Z_PARAM_LONG(max_message_size)
 		Z_PARAM_LONG(max_queued_bytes)
+		Z_PARAM_LONG(max_connections)
+		Z_PARAM_LONG(handshake_timeout_ms)
+		Z_PARAM_LONG(idle_timeout_ms)
 	ZEND_PARSE_PARAMETERS_END();
 
 	if (max_message_size < 1) {
@@ -116,9 +122,24 @@ PHP_METHOD(WebSocket_ServerOptions, __construct)
 		zend_argument_value_error(2, "must be at least 1");
 		RETURN_THROWS();
 	}
+	if (max_connections < 1) {
+		zend_argument_value_error(3, "must be at least 1");
+		RETURN_THROWS();
+	}
+	if (handshake_timeout_ms < 1) {
+		zend_argument_value_error(4, "must be at least 1");
+		RETURN_THROWS();
+	}
+	if (idle_timeout_ms < 1) {
+		zend_argument_value_error(5, "must be at least 1");
+		RETURN_THROWS();
+	}
 
 	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxMessageSize", strlen("maxMessageSize"), max_message_size);
 	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxQueuedBytes", strlen("maxQueuedBytes"), max_queued_bytes);
+	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "maxConnections", strlen("maxConnections"), max_connections);
+	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "handshakeTimeoutMs", strlen("handshakeTimeoutMs"), handshake_timeout_ms);
+	zend_update_property_long(websocket_server_options_ce, Z_OBJ_P(ZEND_THIS), "idleTimeoutMs", strlen("idleTimeoutMs"), idle_timeout_ms);
 }
 
 PHP_METHOD(WebSocket_Server, listen)

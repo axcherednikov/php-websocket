@@ -13,6 +13,7 @@
 #include "php.h"
 #include "php_network.h"
 #include "Zend/zend_closures.h"
+#include "Zend/zend_enum.h"
 
 #include <sys/socket.h>
 
@@ -23,6 +24,9 @@ extern zend_module_entry websocket_module_entry;
 #define WEBSOCKET_HTTP_MAX_REQUEST_SIZE 8192
 #define WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE (16 * 1024 * 1024)
 #define WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES (16 * 1024 * 1024)
+#define WEBSOCKET_DEFAULT_MAX_CONNECTIONS 10000
+#define WEBSOCKET_DEFAULT_HANDSHAKE_TIMEOUT_MS 10000
+#define WEBSOCKET_DEFAULT_IDLE_TIMEOUT_MS 120000
 #define WEBSOCKET_CLOSE_REASON_MAX_LEN 123
 
 #define WEBSOCKET_OPCODE_CONTINUATION 0x0
@@ -128,6 +132,8 @@ typedef struct _websocket_connection_object {
 	bool fragmented;
 	uint8_t fragmented_opcode;
 	zend_string *fragmented_payload;
+	uint64_t accepted_at_usec;
+	uint64_t last_activity_usec;
 	zend_object std;
 } websocket_connection_object;
 

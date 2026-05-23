@@ -101,6 +101,9 @@ Options:
 |---|---|
 | `maxMessageSize` | Maximum incoming text/binary message size; defaults to 16 MiB |
 | `maxQueuedBytes` | Maximum outgoing queued bytes per connection; defaults to 16 MiB |
+| `maxConnections` | Maximum concurrently accepted TCP connections; defaults to 10000 |
+| `handshakeTimeoutMs` | Maximum idle time before HTTP Upgrade completes; defaults to 10000 ms |
+| `idleTimeoutMs` | Maximum idle time after HTTP Upgrade completes; defaults to 120000 ms |
 
 Prefer `WebSocket\ServerOptions` for explicit configuration. Associative arrays remain supported for compatibility.
 
