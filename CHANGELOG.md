@@ -2,7 +2,11 @@
 
 All notable changes to ext-websocket are documented here.
 
-## Unreleased
+## 1.2.1 - 2026-05-23
+
+### Added
+
+- Added WebSocket subprotocol negotiation with `WebSocket\Server::subprotocols()` and `WebSocket\Connection::$subprotocol`.
 
 ### Changed
 
