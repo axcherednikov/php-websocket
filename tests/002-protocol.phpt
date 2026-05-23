@@ -24,8 +24,10 @@ var_dump($decoded->bytesConsumed);
 var_dump(Protocol::decode(substr($frame, 0, 1)));
 
 $masked = Protocol::encode('hi', MessageType::Text, true);
-var_dump(bin2hex($masked));
+var_dump(strlen($masked));
+var_dump((ord($masked[1]) & 0x80) !== 0);
 var_dump(Protocol::decode($masked)->payload);
+var_dump($masked !== Protocol::encode('hi', MessageType::Text, true));
 ?>
 --EXPECT--
 string(28) "s3pPLMBiTxaQ9kYGzzhZRbK+xOo="
@@ -36,5 +38,7 @@ string(5) "hello"
 bool(true)
 int(7)
 NULL
-string(16) "8182123456787a5d"
+int(8)
+bool(true)
 string(2) "hi"
+bool(true)

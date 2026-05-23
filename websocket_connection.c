@@ -323,6 +323,9 @@ bool websocket_connection_send_frame(websocket_connection_object *intern, zend_s
 	}
 
 	frame = websocket_protocol_pack_payload(payload, opcode, WEBSOCKET_FLAG_FIN);
+	if (!frame) {
+		return false;
+	}
 
 	if (ZSTR_LEN(frame) > intern->max_queued_bytes) {
 		errno = ENOBUFS;
