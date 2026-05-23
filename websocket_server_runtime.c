@@ -16,6 +16,8 @@
 #include <netdb.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/time.h>
+#include <time.h>
 #include <unistd.h>
 
 #define WEBSOCKET_LISTEN_BACKLOG 1024
@@ -37,11 +39,41 @@ typedef struct _websocket_server_frame {
 	zend_string *payload;
 } websocket_server_frame;
 
+static bool websocket_server_close_with_code(websocket_connection_object *connection_obj, zend_long code, const char *reason);
+static uint64_t websocket_server_handshake_timeout_usec(websocket_server_object *intern);
+static uint64_t websocket_server_idle_timeout_usec(websocket_server_object *intern);
+
 static const char websocket_bad_request_response[] =
 	"HTTP/1.1 400 Bad Request\r\n"
 	"Connection: close\r\n"
 	"Content-Length: 0\r\n"
 	"\r\n";
+
+static const char websocket_service_unavailable_response[] =
+	"HTTP/1.1 503 Service Unavailable\r\n"
+	"Connection: close\r\n"
+	"Content-Length: 0\r\n"
+	"\r\n";
+
+static uint64_t websocket_server_now_usec(void)
+{
+#ifdef CLOCK_MONOTONIC
+	struct timespec ts;
+
+	if (clock_gettime(CLOCK_MONOTONIC, &ts) == 0) {
+		return ((uint64_t) ts.tv_sec * 1000000u) + ((uint64_t) ts.tv_nsec / 1000u);
+	}
+#endif
+	{
+		struct timeval tv;
+
+		if (gettimeofday(&tv, NULL) == 0) {
+			return ((uint64_t) tv.tv_sec * 1000000u) + (uint64_t) tv.tv_usec;
+		}
+	}
+
+	return 0;
+}
 
 static void websocket_server_close_fd(const int fd)
 {
@@ -286,6 +318,39 @@ static bool websocket_server_notify_connection_closed(websocket_server_object *i
 	return ok;
 }
 
+static bool websocket_server_connection_expired(websocket_server_object *intern, websocket_connection_object *connection_obj, const uint64_t now_usec)
+{
+	uint64_t last_activity_usec;
+	uint64_t timeout_usec;
+
+	if (now_usec == 0) {
+		return false;
+	}
+
+	last_activity_usec = connection_obj->last_activity_usec ? connection_obj->last_activity_usec : connection_obj->accepted_at_usec;
+	if (last_activity_usec == 0 || now_usec < last_activity_usec) {
+		return false;
+	}
+
+	if (!connection_obj->upgraded) {
+		timeout_usec = websocket_server_handshake_timeout_usec(intern);
+	} else {
+		timeout_usec = websocket_server_idle_timeout_usec(intern);
+	}
+
+	return timeout_usec > 0 && now_usec - last_activity_usec >= timeout_usec;
+}
+
+static void websocket_server_close_expired_connection(websocket_connection_object *connection_obj)
+{
+	if (connection_obj->upgraded) {
+		(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_NORMAL, "idle timeout");
+		return;
+	}
+
+	websocket_connection_close_socket(connection_obj);
+}
+
 static void websocket_server_create_connection_zval(websocket_server_object *intern, zval *connection)
 {
 	if (!Z_ISUNDEF(intern->reusable_connection)) {
@@ -368,54 +433,54 @@ static void websocket_connection_discard_read_bytes(websocket_connection_object 
 	connection_obj->read_buffer_len -= bytes;
 }
 
-static size_t websocket_server_max_message_size(websocket_server_object *intern)
+static size_t websocket_server_positive_option(websocket_server_object *intern, const char *name, const size_t name_len, const size_t fallback)
 {
 	zval *value;
 	zval rv;
-	zend_long max_message_size;
+	zend_long option_value;
 
 	if (Z_TYPE(intern->options) == IS_ARRAY) {
-		value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxMessageSize", strlen("maxMessageSize"));
+		value = zend_hash_str_find(Z_ARRVAL(intern->options), name, name_len);
 		if (!value) {
-			return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
+			return fallback;
 		}
 	} else if (Z_TYPE(intern->options) == IS_OBJECT && instanceof_function(Z_OBJCE(intern->options), websocket_server_options_ce)) {
-		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), "maxMessageSize", strlen("maxMessageSize"), 0, &rv);
+		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), name, name_len, 0, &rv);
 	} else {
-		return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
+		return fallback;
 	}
 
-	max_message_size = zval_get_long(value);
-	if (max_message_size <= 0) {
-		return WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
+	option_value = zval_get_long(value);
+	if (option_value <= 0) {
+		return fallback;
 	}
 
-	return (size_t) max_message_size;
+	return (size_t) option_value;
+}
+
+static size_t websocket_server_max_message_size(websocket_server_object *intern)
+{
+	return websocket_server_positive_option(intern, "maxMessageSize", strlen("maxMessageSize"), WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE);
 }
 
 static size_t websocket_server_max_queued_bytes(websocket_server_object *intern)
 {
-	zval *value;
-	zval rv;
-	zend_long max_queued_bytes;
+	return websocket_server_positive_option(intern, "maxQueuedBytes", strlen("maxQueuedBytes"), WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES);
+}
 
-	if (Z_TYPE(intern->options) == IS_ARRAY) {
-		value = zend_hash_str_find(Z_ARRVAL(intern->options), "maxQueuedBytes", strlen("maxQueuedBytes"));
-		if (!value) {
-			return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
-		}
-	} else if (Z_TYPE(intern->options) == IS_OBJECT && instanceof_function(Z_OBJCE(intern->options), websocket_server_options_ce)) {
-		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), "maxQueuedBytes", strlen("maxQueuedBytes"), 0, &rv);
-	} else {
-		return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
-	}
+static size_t websocket_server_max_connections(websocket_server_object *intern)
+{
+	return websocket_server_positive_option(intern, "maxConnections", strlen("maxConnections"), WEBSOCKET_DEFAULT_MAX_CONNECTIONS);
+}
 
-	max_queued_bytes = zval_get_long(value);
-	if (max_queued_bytes <= 0) {
-		return WEBSOCKET_DEFAULT_MAX_QUEUED_BYTES;
-	}
+static uint64_t websocket_server_handshake_timeout_usec(websocket_server_object *intern)
+{
+	return (uint64_t) websocket_server_positive_option(intern, "handshakeTimeoutMs", strlen("handshakeTimeoutMs"), WEBSOCKET_DEFAULT_HANDSHAKE_TIMEOUT_MS) * 1000u;
+}
 
-	return (size_t) max_queued_bytes;
+static uint64_t websocket_server_idle_timeout_usec(websocket_server_object *intern)
+{
+	return (uint64_t) websocket_server_positive_option(intern, "idleTimeoutMs", strlen("idleTimeoutMs"), WEBSOCKET_DEFAULT_IDLE_TIMEOUT_MS) * 1000u;
 }
 
 static bool websocket_server_close_with_code(websocket_connection_object *connection_obj, const zend_long code, const char *reason)
@@ -815,6 +880,8 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 			size_t bytes_consumed = 0;
 			websocket_http_upgrade_result result;
 
+			connection_obj->last_activity_usec = websocket_server_now_usec();
+
 			if (!websocket_connection_ensure_read_capacity(connection_obj, (size_t) bytes_read, WEBSOCKET_HTTP_MAX_REQUEST_SIZE)) {
 				(void) websocket_server_send_bytes(connection_obj->fd, websocket_bad_request_response, sizeof(websocket_bad_request_response) - 1);
 				connection_obj->open = false;
@@ -874,6 +941,8 @@ static bool websocket_server_process_frame_reads(websocket_server_object *intern
 		const ssize_t bytes_read = recv(connection_obj->fd, chunk, sizeof(chunk), 0);
 
 		if (bytes_read > 0) {
+			connection_obj->last_activity_usec = websocket_server_now_usec();
+
 			if (!websocket_connection_ensure_read_capacity(connection_obj, (size_t) bytes_read, read_limit)) {
 				(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_MESSAGE_TOO_BIG, "message too big");
 				return true;
@@ -922,6 +991,12 @@ static bool websocket_server_accept_connection(websocket_server_object *intern)
 	}
 	errno = 0;
 
+	if (intern->connection_count >= websocket_server_max_connections(intern)) {
+		(void) websocket_server_send_bytes(client_fd, websocket_service_unavailable_response, sizeof(websocket_service_unavailable_response) - 1);
+		websocket_server_close_fd(client_fd);
+		return true;
+	}
+
 	if (websocket_server_set_nonblocking(client_fd) == FAILURE) {
 		websocket_server_close_fd(client_fd);
 		zend_throw_error(NULL, "Cannot make accepted WebSocket connection non-blocking: %s", strerror(errno));
@@ -931,6 +1006,8 @@ static bool websocket_server_accept_connection(websocket_server_object *intern)
 	websocket_server_create_connection_zval(intern, &connection);
 	connection_obj = Z_WEBSOCKET_CONNECTION_P(&connection);
 	websocket_connection_open(connection_obj, WEBSOCKET_G(next_connection_id)++, (const struct sockaddr *) &remote_addr, remote_addr_len, client_fd);
+	connection_obj->accepted_at_usec = websocket_server_now_usec();
+	connection_obj->last_activity_usec = connection_obj->accepted_at_usec;
 	connection_obj->max_queued_bytes = websocket_server_max_queued_bytes(intern);
 
 	if (!websocket_server_ensure_connection_capacity(intern)) {
@@ -980,6 +1057,7 @@ static bool websocket_server_accept_pending(websocket_server_object *intern)
 static bool websocket_server_process_connection_fd(websocket_server_object *intern, const int fd)
 {
 	size_t i;
+	const uint64_t now_usec = websocket_server_now_usec();
 
 	for (i = 0; i < intern->connection_count; i++) {
 		websocket_connection_object *connection_obj = Z_WEBSOCKET_CONNECTION_P(&intern->connections[i]);
@@ -989,6 +1067,11 @@ static bool websocket_server_process_connection_fd(websocket_server_object *inte
 		}
 
 		if (!connection_obj->open) {
+			return true;
+		}
+
+		if (websocket_server_connection_expired(intern, connection_obj, now_usec)) {
+			websocket_server_close_expired_connection(connection_obj);
 			return true;
 		}
 
@@ -1013,11 +1096,17 @@ static bool websocket_server_process_connection_fd(websocket_server_object *inte
 static bool websocket_server_process_connections(websocket_server_object *intern)
 {
 	size_t i;
+	const uint64_t now_usec = websocket_server_now_usec();
 
 	for (i = 0; i < intern->connection_count; i++) {
 		websocket_connection_object *connection_obj = Z_WEBSOCKET_CONNECTION_P(&intern->connections[i]);
 
 		if (!connection_obj->open) {
+			continue;
+		}
+
+		if (websocket_server_connection_expired(intern, connection_obj, now_usec)) {
+			websocket_server_close_expired_connection(connection_obj);
 			continue;
 		}
 

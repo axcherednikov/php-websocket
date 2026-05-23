@@ -22,15 +22,18 @@ final class Server
      * Supported options:
      * - maxMessageSize: maximum accepted text/binary message size in bytes.
      * - maxQueuedBytes: maximum queued outgoing bytes per connection.
+     * - maxConnections: maximum concurrently accepted TCP connections.
+     * - handshakeTimeoutMs: maximum idle time before HTTP Upgrade completes.
+     * - idleTimeoutMs: maximum idle time after HTTP Upgrade completes.
      *
-     * @param ServerOptions|array{maxMessageSize?: positive-int, maxQueuedBytes?: positive-int} $options
+     * @param ServerOptions|array{maxMessageSize?: int, maxQueuedBytes?: int, maxConnections?: int, handshakeTimeoutMs?: int, idleTimeoutMs?: int} $options
      */
     public function __construct(ServerOptions|array $options = []) {}
 
     /**
      * Bind the TCP listener used by run().
      *
-     * @param int<1, 65535> $port
+     * @param int $port
      *
      * @throws \ValueError If the host contains null bytes or the port is outside TCP range.
      */
@@ -94,24 +97,54 @@ final class ServerOptions
     /**
      * Maximum accepted text/binary message size in bytes.
      *
-     * @var positive-int
+     * @var int
      */
     public readonly int $maxMessageSize;
 
     /**
      * Maximum queued outgoing bytes per connection.
      *
-     * @var positive-int
+     * @var int
      */
     public readonly int $maxQueuedBytes;
 
     /**
-     * @param positive-int $maxMessageSize
-     * @param positive-int $maxQueuedBytes
+     * Maximum concurrently accepted TCP connections.
+     *
+     * @var int
+     */
+    public readonly int $maxConnections;
+
+    /**
+     * Maximum idle time before HTTP Upgrade completes, in milliseconds.
+     *
+     * @var int
+     */
+    public readonly int $handshakeTimeoutMs;
+
+    /**
+     * Maximum idle time after HTTP Upgrade completes, in milliseconds.
+     *
+     * @var int
+     */
+    public readonly int $idleTimeoutMs;
+
+    /**
+     * @param int $maxMessageSize
+     * @param int $maxQueuedBytes
+     * @param int $maxConnections
+     * @param int $handshakeTimeoutMs
+     * @param int $idleTimeoutMs
      *
      * @throws \ValueError If a limit is less than 1.
      */
-    public function __construct(int $maxMessageSize = 16 * 1024 * 1024, int $maxQueuedBytes = 16 * 1024 * 1024) {}
+    public function __construct(
+        int $maxMessageSize = 16 * 1024 * 1024,
+        int $maxQueuedBytes = 16 * 1024 * 1024,
+        int $maxConnections = 10000,
+        int $handshakeTimeoutMs = 10000,
+        int $idleTimeoutMs = 120000,
+    ) {}
 }
 
 /**
@@ -147,7 +180,7 @@ final class Connection
     /**
      * Send a close frame and close the connection.
      *
-     * @param int<1000, 4999> $code
+     * @param int $code
      *
      * @throws \ValueError If the close code or reason length is invalid.
      */
@@ -315,13 +348,13 @@ final class Protocol
     /**
      * Encode a raw WebSocket frame.
      *
-     * @param self::OPCODE_CONTINUATION|self::OPCODE_TEXT|self::OPCODE_BINARY|self::OPCODE_CLOSE|self::OPCODE_PING|self::OPCODE_PONG $opcode
-     * @param int-mask-of<self::FLAG_*> $flags
+     * @param int $opcode
+     * @param int $flags
      *
      * @throws \TypeError If $data is not a supported payload or frame value object.
      * @throws \ValueError If opcode, flags, or control payload length is invalid.
      */
-    public static function pack(string|Frame|CloseFrame $data, int $opcode = self::OPCODE_TEXT, int $flags = self::FLAG_FIN): string {}
+    public static function pack(string|Frame|CloseFrame $data, int $opcode = \WebSocket\Protocol::OPCODE_TEXT, int $flags = \WebSocket\Protocol::FLAG_FIN): string {}
 
     /**
      * Decode one raw WebSocket frame from a buffer.

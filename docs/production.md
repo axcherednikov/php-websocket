@@ -33,10 +33,13 @@ Set explicit limits for your workload:
 $server = new WebSocket\Server(new WebSocket\ServerOptions(
     maxMessageSize: 1024 * 1024,
     maxQueuedBytes: 8 * 1024 * 1024,
+    maxConnections: 1000,
+    handshakeTimeoutMs: 5000,
+    idleTimeoutMs: 60000,
 ));
 ```
 
-`maxMessageSize` protects incoming frames and fragmented messages. `maxQueuedBytes` protects memory when a client reads slowly and outgoing writes need to be queued.
+`maxMessageSize` protects incoming frames and fragmented messages. `maxQueuedBytes` protects memory when a client reads slowly and outgoing writes need to be queued. `maxConnections`, `handshakeTimeoutMs`, and `idleTimeoutMs` protect file descriptors and event-loop work from slowloris-style or idle-connection pressure.
 
 ## Slow Clients
 
@@ -68,4 +71,5 @@ The extension intentionally keeps the public API small, so production metrics sh
 - Disable Xdebug for benchmarks and production.
 - Put `wss://` behind a TLS proxy.
 - Start with conservative `maxMessageSize` and `maxQueuedBytes`.
+- Set `maxConnections`, `handshakeTimeoutMs`, and `idleTimeoutMs` for the deployment envelope.
 - Keep the extension and your PHP runtime on the same PHP minor version used during build.

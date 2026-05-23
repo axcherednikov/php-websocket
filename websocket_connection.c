@@ -56,6 +56,8 @@ static zend_object *websocket_connection_create_object(zend_class_entry *ce)
 	intern->fragmented = false;
 	intern->fragmented_opcode = 0;
 	intern->fragmented_payload = NULL;
+	intern->accepted_at_usec = 0;
+	intern->last_activity_usec = 0;
 
 	intern->std.handlers = &websocket_connection_handlers;
 
@@ -162,6 +164,8 @@ void websocket_connection_close_socket(websocket_connection_object *intern)
 	}
 	intern->fragmented = false;
 	intern->fragmented_opcode = 0;
+	intern->accepted_at_usec = 0;
+	intern->last_activity_usec = 0;
 }
 
 bool websocket_connection_has_pending_writes(websocket_connection_object *intern)
