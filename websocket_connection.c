@@ -34,6 +34,7 @@ static zend_object *websocket_connection_create_object(zend_class_entry *ce)
 
 	intern->id = NULL;
 	intern->remote_address = NULL;
+	intern->selected_subprotocol = NULL;
 	intern->remote_addr_len = 0;
 	intern->numeric_id = 0;
 	intern->fd = -1;
@@ -383,9 +384,13 @@ void websocket_connection_open(websocket_connection_object *intern, uint64_t id,
 	if (intern->remote_address) {
 		zend_string_release(intern->remote_address);
 	}
+	if (intern->selected_subprotocol) {
+		zend_string_release(intern->selected_subprotocol);
+	}
 
 	intern->id = NULL;
 	intern->remote_address = NULL;
+	intern->selected_subprotocol = NULL;
 	intern->numeric_id = id;
 	intern->has_remote_addr = false;
 	intern->remote_addr_len = 0;
@@ -424,6 +429,9 @@ static void websocket_connection_free_object(zend_object *object)
 	if (intern->remote_address) {
 		zend_string_release(intern->remote_address);
 	}
+	if (intern->selected_subprotocol) {
+		zend_string_release(intern->selected_subprotocol);
+	}
 	if (intern->read_buffer) {
 		efree(intern->read_buffer);
 	}
@@ -448,6 +456,15 @@ static zval *websocket_connection_read_property(zend_object *object, zend_string
 
 	if (zend_string_equals_literal(name, "remoteAddress")) {
 		ZVAL_STR_COPY(rv, websocket_connection_make_remote_address(intern));
+		return rv;
+	}
+
+	if (zend_string_equals_literal(name, "subprotocol")) {
+		if (intern->selected_subprotocol) {
+			ZVAL_STR_COPY(rv, intern->selected_subprotocol);
+		} else {
+			ZVAL_NULL(rv);
+		}
 		return rv;
 	}
 

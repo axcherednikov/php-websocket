@@ -830,20 +830,28 @@ static bool websocket_server_process_buffered_frames(websocket_server_object *in
 	return true;
 }
 
-static bool websocket_server_finish_upgrade(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj, zend_string *accept_key, const size_t bytes_consumed)
+static bool websocket_server_finish_upgrade(websocket_server_object *intern, zval *connection, websocket_connection_object *connection_obj, zend_string *accept_key, zend_string *selected_subprotocol, const size_t bytes_consumed)
 {
 	zend_string *response;
 	bool close_requested = false;
 	bool ok;
 	const bool needs_connection = Z_ISUNDEF(intern->on_open) || intern->on_open_param_count > 0;
 
-	response = websocket_http_upgrade_response(accept_key);
+	response = websocket_http_upgrade_response(accept_key, selected_subprotocol);
 	ok = websocket_server_send_bytes(connection_obj->fd, ZSTR_VAL(response), ZSTR_LEN(response));
 	zend_string_release(response);
 
 	if (!ok) {
 		connection_obj->open = false;
 		return true;
+	}
+
+	if (connection_obj->selected_subprotocol) {
+		zend_string_release(connection_obj->selected_subprotocol);
+		connection_obj->selected_subprotocol = NULL;
+	}
+	if (selected_subprotocol) {
+		connection_obj->selected_subprotocol = zend_string_copy(selected_subprotocol);
 	}
 
 	connection_obj->upgraded = true;
@@ -882,6 +890,7 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 
 		if (bytes_read > 0) {
 			zend_string *accept_key = NULL;
+			zend_string *selected_subprotocol = NULL;
 			size_t bytes_consumed = 0;
 			websocket_http_upgrade_result result;
 
@@ -896,7 +905,7 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 			memcpy(connection_obj->read_buffer + connection_obj->read_buffer_len, chunk, (size_t) bytes_read);
 			connection_obj->read_buffer_len += (size_t) bytes_read;
 
-			result = websocket_http_parse_upgrade(connection_obj->read_buffer, connection_obj->read_buffer_len, &accept_key, &bytes_consumed);
+			result = websocket_http_parse_upgrade(connection_obj->read_buffer, connection_obj->read_buffer_len, Z_TYPE(intern->subprotocols) == IS_ARRAY ? Z_ARRVAL(intern->subprotocols) : NULL, &accept_key, &selected_subprotocol, &bytes_consumed);
 			if (result == WEBSOCKET_HTTP_UPGRADE_INCOMPLETE) {
 				continue;
 			}
@@ -907,12 +916,18 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 				return true;
 			}
 
-			if (!websocket_server_finish_upgrade(intern, connection, connection_obj, accept_key, bytes_consumed)) {
+			if (!websocket_server_finish_upgrade(intern, connection, connection_obj, accept_key, selected_subprotocol, bytes_consumed)) {
 				zend_string_release(accept_key);
+				if (selected_subprotocol) {
+					zend_string_release(selected_subprotocol);
+				}
 				return false;
 			}
 
 			zend_string_release(accept_key);
+			if (selected_subprotocol) {
+				zend_string_release(selected_subprotocol);
+			}
 			return true;
 		}
 

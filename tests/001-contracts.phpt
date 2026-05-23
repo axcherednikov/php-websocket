@@ -13,7 +13,10 @@ var_dump(class_exists(WebSocket\CloseFrame::class));
 var_dump(class_exists(WebSocket\Protocol::class));
 var_dump(method_exists(WebSocket\Server::class, 'send'));
 var_dump(method_exists(WebSocket\Server::class, 'close'));
+var_dump(method_exists(WebSocket\Server::class, 'subprotocols'));
+var_dump((new ReflectionMethod(WebSocket\Server::class, 'subprotocols'))->isVariadic());
 var_dump((new ReflectionMethod(WebSocket\Connection::class, 'send'))->getNumberOfParameters());
+var_dump((new ReflectionProperty(WebSocket\Connection::class, 'subprotocol'))->getType()->allowsNull());
 var_dump((new ReflectionMethod(WebSocket\ServerOptions::class, '__construct'))->getNumberOfParameters());
 $options = new WebSocket\ServerOptions(maxMessageSize: 1024, maxQueuedBytes: 2048, maxConnections: 16, handshakeTimeoutMs: 250, idleTimeoutMs: 500);
 var_dump($options->maxMessageSize);
@@ -31,6 +34,12 @@ var_dump((new ReflectionMethod(WebSocket\CloseFrame::class, '__construct'))->get
 
 $server = new WebSocket\Server();
 $server->listen('127.0.0.1', 8080);
+$server->subprotocols('chat.v1', 'superchat');
+try {
+    $server->subprotocols('bad protocol');
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
 $server->onOpen(static function () {});
 $server->onMessage(static function () {});
 $server->onClose(static function () {});
@@ -47,7 +56,10 @@ bool(true)
 bool(true)
 bool(false)
 bool(false)
+bool(true)
+bool(true)
 int(2)
+bool(true)
 int(5)
 int(1024)
 int(2048)
@@ -57,4 +69,5 @@ int(500)
 WebSocket\ServerOptions::__construct(): Argument #1 ($maxMessageSize) must be at least 1
 int(3)
 int(2)
+WebSocket\Server::subprotocols(): Argument #1 must be a valid WebSocket subprotocol token
 bool(true)

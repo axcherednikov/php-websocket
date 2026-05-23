@@ -59,9 +59,11 @@ use WebSocket\Server;
 
 $server = new Server();
 $server->listen('127.0.0.1', 8080);
+$server->subprotocols('chat.v1');
 
 $server->onOpen(static function (Connection $connection): void {
-    echo "open {$connection->id}\n";
+    echo "open {$connection->id}";
+    echo $connection->subprotocol ? " ({$connection->subprotocol})\n" : "\n";
 });
 
 $server->onMessage(static function (Connection $connection, string $message): void {
@@ -113,6 +115,7 @@ Methods:
 |---|---|
 | `__construct(ServerOptions\|array $options = [])` | Create a server |
 | `listen(string $host, int $port): void` | Bind address for `run()` |
+| `subprotocols(string ...$protocols): void` | Configure supported `Sec-WebSocket-Protocol` tokens |
 | `onOpen(Closure $handler): void` | Register upgraded connection callback |
 | `onMessage(Closure $handler): void` | Register text/binary message callback |
 | `onClose(Closure $handler): void` | Register close callback |
@@ -130,6 +133,7 @@ Methods:
 | `isOpen(): bool` | Check connection state |
 | `readonly string $id` | Connection id |
 | `readonly string $remoteAddress` | Remote peer address |
+| `readonly ?string $subprotocol` | Negotiated subprotocol, or `null` |
 
 ### `WebSocket\Protocol`
 
@@ -151,9 +155,9 @@ Methods:
 
 ## Benchmarks
 
-Detailed benchmark results and commands live in [bench/README.md](bench/README.md).
+Detailed benchmark results and commands live in the separate [php-websocket-bench](https://github.com/axcherednikov/php-websocket-bench) repository.
 
-The current benchmark suite covers protocol encode/decode, server accept/upgrade runtime, and real `ws://` / `wss://` message runtime against AMPHP, Workerman, and OpenSwoole.
+The benchmark suite covers protocol encode/decode, server upgrade runtime, and real `ws://` / `wss://` message runtime against AMPHP, Workerman, OpenSwoole, and Ratchet.
 
 ## Production
 

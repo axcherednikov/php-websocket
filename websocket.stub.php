@@ -40,6 +40,17 @@ final class Server
     public function listen(string $host, int $port): void {}
 
     /**
+     * Configure server-supported WebSocket subprotocols.
+     *
+     * The HTTP Upgrade response selects the first client-offered token that is
+     * present in this list. Invalid or duplicate tokens are rejected.
+     *
+     * @throws \ValueError If a protocol is not a valid RFC token or appears more than once.
+     * @throws \Error If called while the server is running.
+     */
+    public function subprotocols(string ...$protocols): void {}
+
+    /**
      * Register a callback called after a successful HTTP Upgrade.
      *
      * Returning false from the callback closes the accepted connection.
@@ -165,6 +176,11 @@ final class Connection
      * @var non-empty-string
      */
     public readonly string $remoteAddress;
+
+    /**
+     * Selected WebSocket subprotocol, or null when none was negotiated.
+     */
+    public readonly ?string $subprotocol;
 
     /**
      * Send a text, binary, ping, pong, or close frame.
