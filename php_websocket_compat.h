@@ -27,6 +27,11 @@ static inline zend_class_entry *zend_register_internal_class_with_flags(
 }
 #endif
 
+#if PHP_VERSION_ID < 80300
+# define zend_declare_typed_class_constant(ce, name, value, access_type, attributes, type) \
+	zend_declare_class_constant((ce), ZSTR_VAL(name), ZSTR_LEN(name), (value))
+#endif
+
 #if PHP_VERSION_ID >= 80300
 # define WEBSOCKET_SET_DEFAULT_HANDLERS(ce, h) \
 	(ce)->default_object_handlers = (h)
