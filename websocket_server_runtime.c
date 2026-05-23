@@ -30,6 +30,7 @@ typedef enum _websocket_server_frame_status {
 	WEBSOCKET_SERVER_FRAME_OK = 1,
 	WEBSOCKET_SERVER_FRAME_PROTOCOL_ERROR = 2,
 	WEBSOCKET_SERVER_FRAME_MESSAGE_TOO_BIG = 3,
+	WEBSOCKET_SERVER_FRAME_INVALID_PAYLOAD = 4,
 } websocket_server_frame_status;
 
 typedef struct _websocket_server_frame {
@@ -624,6 +625,12 @@ static websocket_server_frame_status websocket_server_parse_frame(websocket_conn
 	ZSTR_VAL(frame->payload)[payload_len] = '\0';
 	frame->bytes_consumed = pos + (size_t) payload_len;
 
+	if (frame->opcode == WEBSOCKET_OPCODE_CLOSE && payload_len >= 2 && !websocket_protocol_is_valid_utf8(ZSTR_VAL(frame->payload) + 2, (size_t) payload_len - 2)) {
+		zend_string_release(frame->payload);
+		frame->payload = NULL;
+		return WEBSOCKET_SERVER_FRAME_INVALID_PAYLOAD;
+	}
+
 	return WEBSOCKET_SERVER_FRAME_OK;
 }
 
@@ -726,6 +733,11 @@ static bool websocket_server_handle_data_frame(websocket_server_object *intern, 
 			return true;
 		}
 
+		if (connection_obj->fragmented_opcode == WEBSOCKET_OPCODE_TEXT && !websocket_protocol_is_valid_utf8(ZSTR_VAL(connection_obj->fragmented_payload), ZSTR_LEN(connection_obj->fragmented_payload))) {
+			websocket_server_clear_fragment(connection_obj);
+			return websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_INVALID_PAYLOAD, "invalid utf-8");
+		}
+
 		if (!websocket_server_call_message_handler(intern, connection, connection_obj->fragmented_payload, connection_obj->fragmented_opcode)) {
 			websocket_server_clear_fragment(connection_obj);
 			return false;
@@ -741,6 +753,10 @@ static bool websocket_server_handle_data_frame(websocket_server_object *intern, 
 	}
 
 	if (frame->final) {
+		if (frame->opcode == WEBSOCKET_OPCODE_TEXT && !websocket_protocol_is_valid_utf8(ZSTR_VAL(frame->payload), ZSTR_LEN(frame->payload))) {
+			return websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_INVALID_PAYLOAD, "invalid utf-8");
+		}
+
 		return websocket_server_call_message_handler(intern, connection, frame->payload, frame->opcode);
 	}
 
@@ -807,6 +823,12 @@ static bool websocket_server_process_buffered_frames(websocket_server_object *in
 		if (status == WEBSOCKET_SERVER_FRAME_MESSAGE_TOO_BIG) {
 			websocket_server_clear_fragment(connection_obj);
 			(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_MESSAGE_TOO_BIG, "message too big");
+			return true;
+		}
+
+		if (status == WEBSOCKET_SERVER_FRAME_INVALID_PAYLOAD) {
+			websocket_server_clear_fragment(connection_obj);
+			(void) websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_INVALID_PAYLOAD, "invalid utf-8");
 			return true;
 		}
 

@@ -486,6 +486,10 @@ PHP_METHOD(WebSocket_Connection, send)
 		zend_argument_value_error(1, "control frame payload must be at most 125 bytes");
 		RETURN_THROWS();
 	}
+	if (opcode == WEBSOCKET_OPCODE_TEXT && !websocket_protocol_is_valid_utf8(ZSTR_VAL(payload), ZSTR_LEN(payload))) {
+		zend_argument_value_error(1, "must be valid UTF-8 for text frames");
+		RETURN_THROWS();
+	}
 
 	if (!websocket_connection_send_frame(intern, payload, opcode)) {
 		zend_throw_error(NULL, "Failed to send WebSocket frame");
@@ -517,6 +521,10 @@ PHP_METHOD(WebSocket_Connection, close)
 	}
 	if (ZSTR_LEN(reason) > WEBSOCKET_CLOSE_REASON_MAX_LEN) {
 		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
+		RETURN_THROWS();
+	}
+	if (!websocket_protocol_is_valid_utf8(ZSTR_VAL(reason), ZSTR_LEN(reason))) {
+		zend_argument_value_error(2, "must be valid UTF-8");
 		RETURN_THROWS();
 	}
 
