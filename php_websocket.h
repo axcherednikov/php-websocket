@@ -88,6 +88,7 @@ ZEND_TSRMLS_CACHE_EXTERN()
 
 typedef struct _websocket_server_object {
 	zval options;
+	zval subprotocols;
 	zval on_open;
 	zval on_message;
 	zval on_close;
@@ -110,6 +111,7 @@ typedef struct _websocket_server_object {
 typedef struct _websocket_connection_object {
 	zend_string *id;
 	zend_string *remote_address;
+	zend_string *selected_subprotocol;
 	struct sockaddr_storage remote_addr;
 	socklen_t remote_addr_len;
 	uint64_t numeric_id;
@@ -186,8 +188,9 @@ bool websocket_protocol_close_code_is_valid(zend_long code);
 bool websocket_protocol_is_valid_utf8(const char *payload, size_t payload_len);
 zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcode, uint8_t flags);
 zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reason);
-websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, size_t len, zend_string **accept_key, size_t *bytes_consumed);
-zend_string *websocket_http_upgrade_response(zend_string *accept_key);
+websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, size_t len, HashTable *supported_subprotocols, zend_string **accept_key, zend_string **selected_subprotocol, size_t *bytes_consumed);
+zend_string *websocket_http_upgrade_response(zend_string *accept_key, zend_string *selected_subprotocol);
+bool websocket_http_validate_subprotocol_token(const char *value, size_t value_len);
 
 static zend_always_inline websocket_server_object *Z_WEBSOCKET_SERVER_P(zval *zv)
 {

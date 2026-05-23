@@ -2,6 +2,12 @@
 
 All notable changes to ext-websocket are documented here.
 
+## Unreleased
+
+### Changed
+
+- Moved benchmarks to the separate [`php-websocket-bench`](https://github.com/axcherednikov/php-websocket-bench) repository.
+
 ## 1.1.0 - 2026-05-23
 
 ### Added
@@ -52,7 +58,7 @@ All notable changes to ext-websocket are documented here.
 
 ### Changed
 
-- Simplified the root README and moved detailed benchmark output to `bench/README.md`.
+- Simplified the root README and moved detailed benchmark output out of the root README.
 
 ## 0.7.0 - 2026-05-18
 

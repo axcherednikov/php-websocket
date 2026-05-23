@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 0b1d9b784f9f267416396b70e5c2d1523bc87820 */
+ * Stub hash: 3b15a096ef5cc7eadc01a0f97ff128ced381089e */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_Server___construct, 0, 0, 0)
 	ZEND_ARG_OBJ_TYPE_MASK(0, options, WebSocket\\ServerOptions, MAY_BE_ARRAY, "[]")
@@ -8,6 +8,10 @@ ZEND_END_ARG_INFO()
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_listen, 0, 2, IS_VOID, 0)
 	ZEND_ARG_TYPE_INFO(0, host, IS_STRING, 0)
 	ZEND_ARG_TYPE_INFO(0, port, IS_LONG, 0)
+ZEND_END_ARG_INFO()
+
+ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_subprotocols, 0, 0, IS_VOID, 0)
+	ZEND_ARG_VARIADIC_TYPE_INFO(0, protocols, IS_STRING, 0)
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Server_onOpen, 0, 1, IS_VOID, 0)
@@ -84,6 +88,7 @@ ZEND_END_ARG_INFO()
 
 ZEND_METHOD(WebSocket_Server, __construct);
 ZEND_METHOD(WebSocket_Server, listen);
+ZEND_METHOD(WebSocket_Server, subprotocols);
 ZEND_METHOD(WebSocket_Server, onOpen);
 ZEND_METHOD(WebSocket_Server, onMessage);
 ZEND_METHOD(WebSocket_Server, onClose);
@@ -106,6 +111,7 @@ ZEND_METHOD(WebSocket_Protocol, unpack);
 static const zend_function_entry class_WebSocket_Server_methods[] = {
 	ZEND_ME(WebSocket_Server, __construct, arginfo_class_WebSocket_Server___construct, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, listen, arginfo_class_WebSocket_Server_listen, ZEND_ACC_PUBLIC)
+	ZEND_ME(WebSocket_Server, subprotocols, arginfo_class_WebSocket_Server_subprotocols, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, onOpen, arginfo_class_WebSocket_Server_onOpen, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, onMessage, arginfo_class_WebSocket_Server_onMessage, ZEND_ACC_PUBLIC)
 	ZEND_ME(WebSocket_Server, onClose, arginfo_class_WebSocket_Server_onClose, ZEND_ACC_PUBLIC)
@@ -215,6 +221,12 @@ static zend_class_entry *register_class_WebSocket_Connection(void)
 	zend_string *property_remoteAddress_name = zend_string_init("remoteAddress", sizeof("remoteAddress") - 1, 1);
 	zend_declare_typed_property(class_entry, property_remoteAddress_name, &property_remoteAddress_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING));
 	zend_string_release(property_remoteAddress_name);
+
+	zval property_subprotocol_default_value;
+	ZVAL_UNDEF(&property_subprotocol_default_value);
+	zend_string *property_subprotocol_name = zend_string_init("subprotocol", sizeof("subprotocol") - 1, 1);
+	zend_declare_typed_property(class_entry, property_subprotocol_name, &property_subprotocol_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_STRING|MAY_BE_NULL));
+	zend_string_release(property_subprotocol_name);
 
 	return class_entry;
 }

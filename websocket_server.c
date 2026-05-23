@@ -29,6 +29,7 @@ static zend_object *websocket_server_create_object(zend_class_entry *ce)
 	object_properties_init(&intern->std, ce);
 
 	ZVAL_UNDEF(&intern->options);
+	ZVAL_UNDEF(&intern->subprotocols);
 	ZVAL_UNDEF(&intern->on_open);
 	ZVAL_UNDEF(&intern->on_message);
 	ZVAL_UNDEF(&intern->on_close);
@@ -56,6 +57,7 @@ static void websocket_server_free_object(zend_object *object)
 	websocket_server_object *intern = websocket_server_from_obj(object);
 
 	zval_ptr_dtor(&intern->options);
+	zval_ptr_dtor(&intern->subprotocols);
 	zval_ptr_dtor(&intern->on_open);
 	zval_ptr_dtor(&intern->on_message);
 	zval_ptr_dtor(&intern->on_close);
@@ -95,6 +97,65 @@ PHP_METHOD(WebSocket_Server, __construct)
 	} else {
 		array_init(&intern->options);
 	}
+
+	array_init(&intern->subprotocols);
+}
+
+PHP_METHOD(WebSocket_Server, subprotocols)
+{
+	zval *protocols;
+	uint32_t protocol_count;
+	zval normalized;
+	HashTable seen;
+	websocket_server_object *intern = Z_WEBSOCKET_SERVER_P(ZEND_THIS);
+
+	ZEND_PARSE_PARAMETERS_START(0, -1)
+		Z_PARAM_VARIADIC('*', protocols, protocol_count)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (intern->running) {
+		zend_throw_error(NULL, "Cannot change WebSocket subprotocols while the server is running");
+		RETURN_THROWS();
+	}
+
+	array_init(&normalized);
+	zend_hash_init(&seen, protocol_count, NULL, NULL, 0);
+
+	for (uint32_t i = 0; i < protocol_count; i++) {
+		zval *protocol = &protocols[i];
+		zend_string *protocol_str;
+		zval value;
+
+		if (Z_TYPE_P(protocol) != IS_STRING) {
+			zend_hash_destroy(&seen);
+			zval_ptr_dtor(&normalized);
+			zend_argument_type_error(i + 1, "must be of type string, %s given", websocket_zval_value_name(protocol));
+			RETURN_THROWS();
+		}
+
+		protocol_str = Z_STR_P(protocol);
+		if (!websocket_http_validate_subprotocol_token(ZSTR_VAL(protocol_str), ZSTR_LEN(protocol_str))) {
+			zend_hash_destroy(&seen);
+			zval_ptr_dtor(&normalized);
+			zend_argument_value_error(i + 1, "must be a valid WebSocket subprotocol token");
+			RETURN_THROWS();
+		}
+
+		if (zend_hash_exists(&seen, protocol_str)) {
+			zend_hash_destroy(&seen);
+			zval_ptr_dtor(&normalized);
+			zend_argument_value_error(i + 1, "must not duplicate a previous subprotocol");
+			RETURN_THROWS();
+		}
+
+		zend_hash_add_empty_element(&seen, protocol_str);
+		ZVAL_STR_COPY(&value, protocol_str);
+		zend_hash_add_new(Z_ARRVAL(normalized), protocol_str, &value);
+	}
+
+	zend_hash_destroy(&seen);
+	zval_ptr_dtor(&intern->subprotocols);
+	ZVAL_COPY_VALUE(&intern->subprotocols, &normalized);
 }
 
 PHP_METHOD(WebSocket_ServerOptions, __construct)

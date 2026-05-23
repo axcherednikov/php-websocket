@@ -81,6 +81,90 @@ static bool websocket_http_header_contains_token(const char *value, const size_t
 	return false;
 }
 
+bool websocket_http_validate_subprotocol_token(const char *value, const size_t value_len)
+{
+	size_t i;
+
+	if (value_len == 0) {
+		return false;
+	}
+
+	for (i = 0; i < value_len; i++) {
+		const unsigned char ch = (unsigned char) value[i];
+
+		if (ch <= 32 || ch >= 127) {
+			return false;
+		}
+
+		switch (ch) {
+			case '(':
+			case ')':
+			case '<':
+			case '>':
+			case '@':
+			case ',':
+			case ';':
+			case ':':
+			case '\\':
+			case '"':
+			case '/':
+			case '[':
+			case ']':
+			case '?':
+			case '=':
+			case '{':
+			case '}':
+				return false;
+			default:
+				break;
+		}
+	}
+
+	return true;
+}
+
+static bool websocket_http_select_subprotocol(const char *value, const size_t value_len, HashTable *supported_subprotocols, zend_string **selected_subprotocol)
+{
+	const char *part = value;
+	size_t offset = 0;
+
+	while (offset <= value_len) {
+		const char *token_start = part;
+		size_t token_len;
+		const char *comma = memchr(part, ',', value_len - offset);
+
+		if (comma) {
+			token_len = (size_t) (comma - part);
+		} else {
+			token_len = value_len - offset;
+		}
+
+		websocket_http_trim(&token_start, &token_len);
+		if (!websocket_http_validate_subprotocol_token(token_start, token_len)) {
+			return false;
+		}
+
+		if (!*selected_subprotocol && supported_subprotocols && zend_hash_num_elements(supported_subprotocols) > 0) {
+			zend_string *offered = zend_string_init(token_start, token_len, false);
+
+			if (zend_hash_exists(supported_subprotocols, offered)) {
+				*selected_subprotocol = zend_string_copy(offered);
+			}
+
+			zend_string_release(offered);
+		}
+
+		if (!comma) {
+			break;
+		}
+
+		part = comma + 1;
+		offset = (size_t) (part - value);
+	}
+
+	return true;
+}
+
 static bool websocket_http_validate_request_line(const char *line, const size_t line_len)
 {
 	const char *method_end;
@@ -142,7 +226,7 @@ static bool websocket_http_validate_key(const char *value, const size_t value_le
 	return true;
 }
 
-websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, const size_t len, zend_string **accept_key, size_t *bytes_consumed)
+websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, const size_t len, HashTable *supported_subprotocols, zend_string **accept_key, zend_string **selected_subprotocol, size_t *bytes_consumed)
 {
 	const char *header_end;
 	const char *line;
@@ -152,6 +236,7 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 	bool has_version = false;
 
 	*accept_key = NULL;
+	*selected_subprotocol = NULL;
 	*bytes_consumed = 0;
 
 	if (len > WEBSOCKET_HTTP_MAX_REQUEST_SIZE) {
@@ -188,6 +273,10 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 				zend_string_release(*accept_key);
 				*accept_key = NULL;
 			}
+			if (*selected_subprotocol) {
+				zend_string_release(*selected_subprotocol);
+				*selected_subprotocol = NULL;
+			}
 			return WEBSOCKET_HTTP_UPGRADE_INVALID;
 		}
 
@@ -201,6 +290,10 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 			if (*accept_key) {
 				zend_string_release(*accept_key);
 				*accept_key = NULL;
+			}
+			if (*selected_subprotocol) {
+				zend_string_release(*selected_subprotocol);
+				*selected_subprotocol = NULL;
 			}
 			return WEBSOCKET_HTTP_UPGRADE_INVALID;
 		}
@@ -222,10 +315,30 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 			if (*accept_key) {
 				zend_string_release(*accept_key);
 				*accept_key = NULL;
+				if (*selected_subprotocol) {
+					zend_string_release(*selected_subprotocol);
+					*selected_subprotocol = NULL;
+				}
 				return WEBSOCKET_HTTP_UPGRADE_INVALID;
 			}
 
 			if (!websocket_http_validate_key(value, value_len, accept_key)) {
+				if (*selected_subprotocol) {
+					zend_string_release(*selected_subprotocol);
+					*selected_subprotocol = NULL;
+				}
+				return WEBSOCKET_HTTP_UPGRADE_INVALID;
+			}
+		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Protocol", strlen("Sec-WebSocket-Protocol"))) {
+			if (!websocket_http_select_subprotocol(value, value_len, supported_subprotocols, selected_subprotocol)) {
+				if (*accept_key) {
+					zend_string_release(*accept_key);
+					*accept_key = NULL;
+				}
+				if (*selected_subprotocol) {
+					zend_string_release(*selected_subprotocol);
+					*selected_subprotocol = NULL;
+				}
 				return WEBSOCKET_HTTP_UPGRADE_INVALID;
 			}
 		}
@@ -238,14 +351,30 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 			zend_string_release(*accept_key);
 			*accept_key = NULL;
 		}
+		if (*selected_subprotocol) {
+			zend_string_release(*selected_subprotocol);
+			*selected_subprotocol = NULL;
+		}
 		return WEBSOCKET_HTTP_UPGRADE_INVALID;
 	}
 
 	return WEBSOCKET_HTTP_UPGRADE_OK;
 }
 
-zend_string *websocket_http_upgrade_response(zend_string *accept_key)
+zend_string *websocket_http_upgrade_response(zend_string *accept_key, zend_string *selected_subprotocol)
 {
+	if (selected_subprotocol) {
+		return strpprintf(0,
+			"HTTP/1.1 101 Switching Protocols\r\n"
+			"Upgrade: websocket\r\n"
+			"Connection: Upgrade\r\n"
+			"Sec-WebSocket-Accept: %s\r\n"
+			"Sec-WebSocket-Protocol: %s\r\n"
+			"\r\n",
+			ZSTR_VAL(accept_key),
+			ZSTR_VAL(selected_subprotocol));
+	}
+
 	return strpprintf(0,
 		"HTTP/1.1 101 Switching Protocols\r\n"
 		"Upgrade: websocket\r\n"
