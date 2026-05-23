@@ -8,6 +8,7 @@
 #include "websocket_arginfo.h"
 #include "ext/standard/base64.h"
 #include "ext/standard/sha1.h"
+#include "ext/random/php_random_csprng.h"
 #include "Zend/zend_enum.h"
 
 #include <string.h>
@@ -170,8 +171,12 @@ zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcod
 	size_t pos = 0;
 	zend_string *frame;
 	unsigned char *out;
-	uint8_t mask[4] = {0x12, 0x34, 0x56, 0x78};
+	uint8_t mask[4];
 	size_t i;
+
+	if (masked && php_random_bytes_throw(mask, sizeof(mask)) == FAILURE) {
+		return NULL;
+	}
 
 	if (payload_len >= 126 && payload_len <= 0xffff) {
 		header_len += 2;
@@ -358,6 +363,7 @@ PHP_METHOD(WebSocket_Protocol, acceptKey)
 PHP_METHOD(WebSocket_Protocol, encode)
 {
 	zend_string *payload;
+	zend_string *frame;
 	zval *type = NULL;
 	bool masked = false;
 	uint8_t opcode = WEBSOCKET_OPCODE_TEXT;
@@ -377,7 +383,12 @@ PHP_METHOD(WebSocket_Protocol, encode)
 		flags |= WEBSOCKET_FLAG_MASK;
 	}
 
-	RETURN_STR(websocket_protocol_pack_payload(payload, opcode, flags));
+	frame = websocket_protocol_pack_payload(payload, opcode, flags);
+	if (!frame) {
+		RETURN_THROWS();
+	}
+
+	RETURN_STR(frame);
 }
 
 PHP_METHOD(WebSocket_Protocol, pack)
@@ -459,7 +470,18 @@ PHP_METHOD(WebSocket_Protocol, pack)
 		RETURN_THROWS();
 	}
 
-	RETVAL_STR(websocket_protocol_pack_payload(payload, (uint8_t) opcode, (uint8_t) (flags & WEBSOCKET_FLAGS_ALL)));
+	{
+		zend_string *frame = websocket_protocol_pack_payload(payload, (uint8_t) opcode, (uint8_t) (flags & WEBSOCKET_FLAGS_ALL));
+
+		if (!frame) {
+			if (tmp_payload) {
+				zend_string_release(tmp_payload);
+			}
+			RETURN_THROWS();
+		}
+
+		RETVAL_STR(frame);
+	}
 
 	if (tmp_payload) {
 		zend_string_release(tmp_payload);
