@@ -8,10 +8,16 @@
 #include "websocket_arginfo.h"
 #include "ext/standard/base64.h"
 #include "ext/standard/sha1.h"
-#include "ext/random/php_random_csprng.h"
 #include "Zend/zend_enum.h"
 
+#include <errno.h>
+#include <fcntl.h>
+#if defined(__linux__)
+# include <sys/random.h>
+#endif
+#include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #define WEBSOCKET_GUID "258EAFA5-E914-47DA-95CA-C5AB0DC85B11"
 
@@ -25,6 +31,72 @@ static uint32_t websocket_close_frame_prop_code_num;
 static uint32_t websocket_close_frame_prop_reason_num;
 static uint32_t websocket_close_frame_prop_flags_num;
 static uint32_t websocket_close_frame_prop_bytes_consumed_num;
+
+static bool websocket_protocol_random_bytes(uint8_t *bytes, const size_t size)
+{
+#if defined(__APPLE__) || defined(__FreeBSD__) || defined(__OpenBSD__) || defined(__NetBSD__) || defined(__DragonFly__)
+	arc4random_buf(bytes, size);
+	return true;
+#elif defined(__linux__)
+	size_t offset = 0;
+
+	while (offset < size) {
+		const ssize_t n = getrandom(bytes + offset, size - offset, 0);
+
+		if (n > 0) {
+			offset += (size_t) n;
+			continue;
+		}
+		if (n < 0 && errno == EINTR) {
+			continue;
+		}
+		if (n < 0 && errno == ENOSYS) {
+			break;
+		}
+
+		zend_throw_error(NULL, "Unable to generate WebSocket mask key");
+		return false;
+	}
+
+	if (offset == size) {
+		return true;
+	}
+#endif
+	{
+		int fd;
+		size_t offset = 0;
+
+		do {
+			fd = open("/dev/urandom", O_RDONLY);
+		} while (fd < 0 && errno == EINTR);
+
+		if (fd < 0) {
+			zend_throw_error(NULL, "Unable to open /dev/urandom for WebSocket mask key");
+			return false;
+		}
+
+		while (offset < size) {
+			const ssize_t n = read(fd, bytes + offset, size - offset);
+
+			if (n > 0) {
+				offset += (size_t) n;
+				continue;
+			}
+			if (n < 0 && errno == EINTR) {
+				continue;
+			}
+
+			while (close(fd) < 0 && errno == EINTR) {
+			}
+			zend_throw_error(NULL, "Unable to read /dev/urandom for WebSocket mask key");
+			return false;
+		}
+
+		while (close(fd) < 0 && errno == EINTR) {
+		}
+		return true;
+	}
+}
 
 zend_string *websocket_protocol_accept_key(zend_string *key)
 {
@@ -266,7 +338,7 @@ zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcod
 	uint8_t mask[4];
 	size_t i;
 
-	if (masked && php_random_bytes_throw(mask, sizeof(mask)) == FAILURE) {
+	if (masked && !websocket_protocol_random_bytes(mask, sizeof(mask))) {
 		return NULL;
 	}
 
