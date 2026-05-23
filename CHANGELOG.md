@@ -2,7 +2,7 @@
 
 All notable changes to ext-websocket are documented here.
 
-## 0.10.0 - 2026-05-18
+## 1.0.0 - 2026-05-18
 
 ### Added
 
