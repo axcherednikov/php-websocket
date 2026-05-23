@@ -54,6 +54,20 @@ try {
 } catch (\Error $e) {
     var_dump($e instanceof \Error);
 }
+
+try {
+    Protocol::encode("\xff");
+} catch (\ValueError $e) {
+    var_dump($e instanceof \ValueError);
+}
+
+var_dump(bin2hex(Protocol::decode(Protocol::encode("\xff", MessageType::Binary))->payload));
+
+try {
+    new CloseFrame(1000, "\xff");
+} catch (\ValueError $e) {
+    var_dump($e instanceof \ValueError);
+}
 ?>
 --EXPECT--
 int(0)
@@ -75,4 +89,7 @@ string(7) "too big"
 int(1)
 bool(true)
 bool(true)
+bool(true)
+bool(true)
+string(2) "ff"
 bool(true)

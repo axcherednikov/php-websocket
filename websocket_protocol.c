@@ -70,6 +70,81 @@ bool websocket_protocol_opcode_is_control(zend_long opcode)
 	return opcode >= 0x8 && opcode <= 0xf;
 }
 
+bool websocket_protocol_is_valid_utf8(const char *payload, const size_t payload_len)
+{
+	const unsigned char *bytes = (const unsigned char *) payload;
+	size_t i = 0;
+
+	while (i < payload_len) {
+		unsigned char c = bytes[i];
+
+		if (c <= 0x7f) {
+			i++;
+			continue;
+		}
+
+		if (c >= 0xc2 && c <= 0xdf) {
+			if (i + 1 >= payload_len || (bytes[i + 1] & 0xc0) != 0x80) {
+				return false;
+			}
+			i += 2;
+			continue;
+		}
+
+		if (c == 0xe0) {
+			if (i + 2 >= payload_len || bytes[i + 1] < 0xa0 || bytes[i + 1] > 0xbf || (bytes[i + 2] & 0xc0) != 0x80) {
+				return false;
+			}
+			i += 3;
+			continue;
+		}
+
+		if ((c >= 0xe1 && c <= 0xec) || (c >= 0xee && c <= 0xef)) {
+			if (i + 2 >= payload_len || (bytes[i + 1] & 0xc0) != 0x80 || (bytes[i + 2] & 0xc0) != 0x80) {
+				return false;
+			}
+			i += 3;
+			continue;
+		}
+
+		if (c == 0xed) {
+			if (i + 2 >= payload_len || bytes[i + 1] < 0x80 || bytes[i + 1] > 0x9f || (bytes[i + 2] & 0xc0) != 0x80) {
+				return false;
+			}
+			i += 3;
+			continue;
+		}
+
+		if (c == 0xf0) {
+			if (i + 3 >= payload_len || bytes[i + 1] < 0x90 || bytes[i + 1] > 0xbf || (bytes[i + 2] & 0xc0) != 0x80 || (bytes[i + 3] & 0xc0) != 0x80) {
+				return false;
+			}
+			i += 4;
+			continue;
+		}
+
+		if (c >= 0xf1 && c <= 0xf3) {
+			if (i + 3 >= payload_len || (bytes[i + 1] & 0xc0) != 0x80 || (bytes[i + 2] & 0xc0) != 0x80 || (bytes[i + 3] & 0xc0) != 0x80) {
+				return false;
+			}
+			i += 4;
+			continue;
+		}
+
+		if (c == 0xf4) {
+			if (i + 3 >= payload_len || bytes[i + 1] < 0x80 || bytes[i + 1] > 0x8f || (bytes[i + 2] & 0xc0) != 0x80 || (bytes[i + 3] & 0xc0) != 0x80) {
+				return false;
+			}
+			i += 4;
+			continue;
+		}
+
+		return false;
+	}
+
+	return true;
+}
+
 uint8_t websocket_protocol_message_type_opcode(zval *type)
 {
 	zval *case_name_zv;
@@ -294,6 +369,10 @@ zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reaso
 		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
 		return NULL;
 	}
+	if (!websocket_protocol_is_valid_utf8(ZSTR_VAL(reason), ZSTR_LEN(reason))) {
+		zend_argument_value_error(2, "must be valid UTF-8");
+		return NULL;
+	}
 
 	payload = zend_string_alloc(2 + ZSTR_LEN(reason), 0);
 	ZSTR_VAL(payload)[0] = (char) ((code >> 8) & 0xff);
@@ -345,6 +424,10 @@ PHP_METHOD(WebSocket_CloseFrame, __construct)
 		zend_argument_value_error(2, "must be at most %d bytes", WEBSOCKET_CLOSE_REASON_MAX_LEN);
 		RETURN_THROWS();
 	}
+	if (!websocket_protocol_is_valid_utf8(ZSTR_VAL(reason), ZSTR_LEN(reason))) {
+		zend_argument_value_error(2, "must be valid UTF-8");
+		RETURN_THROWS();
+	}
 
 	websocket_close_frame_update_properties(ZEND_THIS, code, reason, WEBSOCKET_FLAG_FIN, 0);
 }
@@ -381,6 +464,10 @@ PHP_METHOD(WebSocket_Protocol, encode)
 	}
 	if (masked) {
 		flags |= WEBSOCKET_FLAG_MASK;
+	}
+	if (opcode == WEBSOCKET_OPCODE_TEXT && !websocket_protocol_is_valid_utf8(ZSTR_VAL(payload), ZSTR_LEN(payload))) {
+		zend_argument_value_error(1, "must be valid UTF-8 for text frames");
+		RETURN_THROWS();
 	}
 
 	frame = websocket_protocol_pack_payload(payload, opcode, flags);
@@ -464,6 +551,13 @@ PHP_METHOD(WebSocket_Protocol, pack)
 
 	if (websocket_protocol_opcode_is_control(opcode) && ZSTR_LEN(payload) > 125) {
 		zend_argument_value_error(1, "control frame payload must be at most 125 bytes");
+		if (tmp_payload) {
+			zend_string_release(tmp_payload);
+		}
+		RETURN_THROWS();
+	}
+	if (opcode == WEBSOCKET_OPCODE_TEXT && (flags & WEBSOCKET_FLAG_FIN) && !websocket_protocol_is_valid_utf8(ZSTR_VAL(payload), ZSTR_LEN(payload))) {
+		zend_argument_value_error(1, "must be valid UTF-8 for text frames");
 		if (tmp_payload) {
 			zend_string_release(tmp_payload);
 		}
@@ -597,6 +691,11 @@ static void websocket_protocol_unpack(INTERNAL_FUNCTION_PARAMETERS)
 		unsigned char *close_payload;
 
 		if (payload_len >= 2) {
+			if (!websocket_protocol_is_valid_utf8(ZSTR_VAL(payload) + 2, (size_t) payload_len - 2)) {
+				zend_string_release(payload);
+				zend_throw_error(NULL, "Invalid WebSocket close reason UTF-8");
+				RETURN_THROWS();
+			}
 			close_payload = (unsigned char *) ZSTR_VAL(payload);
 			code = ((zend_long) close_payload[0] << 8) | close_payload[1];
 			reason = zend_string_init(ZSTR_VAL(payload) + 2, (size_t) payload_len - 2, 0);
@@ -615,6 +714,11 @@ static void websocket_protocol_unpack(INTERNAL_FUNCTION_PARAMETERS)
 	if (!type_case) {
 		zend_string_release(payload);
 		zend_throw_error(NULL, "Unsupported WebSocket opcode %u", opcode);
+		RETURN_THROWS();
+	}
+	if (opcode == WEBSOCKET_OPCODE_TEXT && final && !websocket_protocol_is_valid_utf8(ZSTR_VAL(payload), ZSTR_LEN(payload))) {
+		zend_string_release(payload);
+		zend_throw_error(NULL, "Invalid WebSocket text frame UTF-8");
 		RETURN_THROWS();
 	}
 

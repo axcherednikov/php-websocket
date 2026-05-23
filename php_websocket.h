@@ -48,6 +48,7 @@ extern zend_module_entry websocket_module_entry;
 
 #define WEBSOCKET_CLOSE_NORMAL 1000
 #define WEBSOCKET_CLOSE_PROTOCOL_ERROR 1002
+#define WEBSOCKET_CLOSE_INVALID_PAYLOAD 1007
 #define WEBSOCKET_CLOSE_MESSAGE_TOO_BIG 1009
 
 #ifdef ZTS
@@ -181,6 +182,7 @@ uint8_t websocket_protocol_message_type_opcode(zval *type);
 zend_object *websocket_protocol_message_type_from_opcode(uint8_t opcode);
 bool websocket_protocol_opcode_is_valid(zend_long opcode);
 bool websocket_protocol_opcode_is_control(zend_long opcode);
+bool websocket_protocol_is_valid_utf8(const char *payload, size_t payload_len);
 zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcode, uint8_t flags);
 zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reason);
 websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, size_t len, zend_string **accept_key, size_t *bytes_consumed);
