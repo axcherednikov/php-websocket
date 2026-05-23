@@ -11,6 +11,7 @@
 #include "php_websocket.h"
 #include "php_websocket_compat.h"
 #include "websocket_arginfo.h"
+#include "Zend/zend_exceptions.h"
 
 #include <string.h>
 
@@ -31,6 +32,7 @@ static zend_object *websocket_server_create_object(zend_class_entry *ce)
 	ZVAL_UNDEF(&intern->options);
 	ZVAL_UNDEF(&intern->subprotocols);
 	ZVAL_UNDEF(&intern->on_open);
+	ZVAL_UNDEF(&intern->on_handshake);
 	ZVAL_UNDEF(&intern->on_message);
 	ZVAL_UNDEF(&intern->on_close);
 	ZVAL_UNDEF(&intern->on_error);
@@ -59,6 +61,7 @@ static void websocket_server_free_object(zend_object *object)
 	zval_ptr_dtor(&intern->options);
 	zval_ptr_dtor(&intern->subprotocols);
 	zval_ptr_dtor(&intern->on_open);
+	zval_ptr_dtor(&intern->on_handshake);
 	zval_ptr_dtor(&intern->on_message);
 	zval_ptr_dtor(&intern->on_close);
 	zval_ptr_dtor(&intern->on_error);
@@ -158,6 +161,17 @@ PHP_METHOD(WebSocket_Server, subprotocols)
 	ZVAL_COPY_VALUE(&intern->subprotocols, &normalized);
 }
 
+PHP_METHOD(WebSocket_Server, onHandshake)
+{
+	zval *handler;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_OBJECT_OF_CLASS(handler, zend_ce_closure)
+	ZEND_PARSE_PARAMETERS_END();
+
+	websocket_server_store_closure(&Z_WEBSOCKET_SERVER_P(ZEND_THIS)->on_handshake, handler);
+}
+
 PHP_METHOD(WebSocket_ServerOptions, __construct)
 {
 	zend_long max_message_size = WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE;
@@ -252,6 +266,41 @@ PHP_METHOD(WebSocket_Server, onOpen)
 	intern->on_open_cache_initialized = function != NULL;
 }
 
+PHP_METHOD(WebSocket_Request, header)
+{
+	zend_string *name;
+	zend_string *lower_name;
+	zval *headers;
+	zval *value;
+
+	ZEND_PARSE_PARAMETERS_START(1, 1)
+		Z_PARAM_STR(name)
+	ZEND_PARSE_PARAMETERS_END();
+
+	lower_name = zend_string_tolower(name);
+	headers = zend_read_property(websocket_request_ce, Z_OBJ_P(ZEND_THIS), "headers", strlen("headers"), 0, NULL);
+	value = Z_TYPE_P(headers) == IS_ARRAY ? zend_hash_find(Z_ARRVAL_P(headers), lower_name) : NULL;
+	zend_string_release(lower_name);
+
+	if (!value) {
+		RETURN_NULL();
+	}
+
+	RETURN_STR_COPY(Z_STR_P(value));
+}
+
+static bool websocket_header_value_is_valid(zend_string *value)
+{
+	return !memchr(ZSTR_VAL(value), '\r', ZSTR_LEN(value)) && !memchr(ZSTR_VAL(value), '\n', ZSTR_LEN(value));
+}
+
+static void websocket_handshake_response_set_properties(zval *object, zend_long status, zval *headers, zend_string *body)
+{
+	zend_update_property_long(websocket_handshake_response_ce, Z_OBJ_P(object), "status", strlen("status"), status);
+	zend_update_property(websocket_handshake_response_ce, Z_OBJ_P(object), "headers", strlen("headers"), headers);
+	zend_update_property_str(websocket_handshake_response_ce, Z_OBJ_P(object), "body", strlen("body"), body);
+}
+
 PHP_METHOD(WebSocket_Server, onMessage)
 {
 	zval *handler;
@@ -283,6 +332,87 @@ PHP_METHOD(WebSocket_Server, onError)
 	ZEND_PARSE_PARAMETERS_END();
 
 	websocket_server_store_closure(&Z_WEBSOCKET_SERVER_P(ZEND_THIS)->on_error, handler);
+}
+
+PHP_METHOD(WebSocket_HandshakeResponse, __construct)
+{
+	zend_long status = 403;
+	zval *headers = NULL;
+	zend_string *body = ZSTR_EMPTY_ALLOC();
+	zval normalized;
+	zend_string *name;
+	zval *value;
+
+	ZEND_PARSE_PARAMETERS_START(0, 3)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_LONG(status)
+		Z_PARAM_ARRAY(headers)
+		Z_PARAM_STR(body)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (status < 100 || status > 599 || status == 101) {
+		zend_argument_value_error(1, "must be a valid non-101 HTTP status code");
+		RETURN_THROWS();
+	}
+
+	array_init(&normalized);
+	if (headers) {
+		ZEND_HASH_FOREACH_STR_KEY_VAL(Z_ARRVAL_P(headers), name, value) {
+			zval header_value;
+
+			if (!name || !websocket_http_validate_subprotocol_token(ZSTR_VAL(name), ZSTR_LEN(name))) {
+				zval_ptr_dtor(&normalized);
+				zend_argument_value_error(2, "must contain valid HTTP header names");
+				RETURN_THROWS();
+			}
+			if (Z_TYPE_P(value) != IS_STRING) {
+				zval_ptr_dtor(&normalized);
+				zend_argument_type_error(2, "must contain string header values, %s given", websocket_zval_value_name(value));
+				RETURN_THROWS();
+			}
+			if (!websocket_header_value_is_valid(Z_STR_P(value))) {
+				zval_ptr_dtor(&normalized);
+				zend_argument_value_error(2, "must contain HTTP header values without CR or LF");
+				RETURN_THROWS();
+			}
+
+			ZVAL_STR_COPY(&header_value, Z_STR_P(value));
+			zend_hash_add_new(Z_ARRVAL(normalized), name, &header_value);
+		} ZEND_HASH_FOREACH_END();
+	}
+
+	websocket_handshake_response_set_properties(ZEND_THIS, status, &normalized, body);
+	zval_ptr_dtor(&normalized);
+}
+
+PHP_METHOD(WebSocket_HandshakeException, __construct)
+{
+	zval *response = NULL;
+	zval default_response;
+	bool has_default_response = false;
+
+	ZEND_PARSE_PARAMETERS_START(0, 1)
+		Z_PARAM_OPTIONAL
+		Z_PARAM_OBJECT_OF_CLASS_OR_NULL(response, websocket_handshake_response_ce)
+	ZEND_PARSE_PARAMETERS_END();
+
+	if (!response) {
+		zval headers;
+
+		object_init_ex(&default_response, websocket_handshake_response_ce);
+		array_init(&headers);
+		websocket_handshake_response_set_properties(&default_response, 403, &headers, ZSTR_EMPTY_ALLOC());
+		zval_ptr_dtor(&headers);
+		response = &default_response;
+		has_default_response = true;
+	}
+
+	zend_update_property(websocket_handshake_exception_ce, Z_OBJ_P(ZEND_THIS), "response", strlen("response"), response);
+	zend_update_property_string(zend_ce_exception, Z_OBJ_P(ZEND_THIS), "message", strlen("message"), "WebSocket handshake rejected");
+
+	if (has_default_response) {
+		zval_ptr_dtor(&default_response);
+	}
 }
 
 PHP_METHOD(WebSocket_Server, run)
@@ -345,6 +475,9 @@ void websocket_register_server_class(void)
 {
 	websocket_server_ce = register_class_WebSocket_Server();
 	websocket_server_options_ce = register_class_WebSocket_ServerOptions();
+	websocket_request_ce = register_class_WebSocket_Request();
+	websocket_handshake_response_ce = register_class_WebSocket_HandshakeResponse();
+	websocket_handshake_exception_ce = register_class_WebSocket_HandshakeException(zend_ce_exception);
 	websocket_server_ce->create_object = websocket_server_create_object;
 
 	memcpy(&websocket_server_handlers, zend_get_std_object_handlers(), sizeof(zend_object_handlers));

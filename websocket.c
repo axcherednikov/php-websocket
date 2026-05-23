@@ -12,6 +12,9 @@ ZEND_DECLARE_MODULE_GLOBALS(websocket)
 
 zend_class_entry *websocket_server_ce;
 zend_class_entry *websocket_server_options_ce;
+zend_class_entry *websocket_request_ce;
+zend_class_entry *websocket_handshake_response_ce;
+zend_class_entry *websocket_handshake_exception_ce;
 zend_class_entry *websocket_connection_ce;
 zend_class_entry *websocket_message_type_ce;
 zend_class_entry *websocket_frame_ce;

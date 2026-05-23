@@ -90,6 +90,7 @@ typedef struct _websocket_server_object {
 	zval options;
 	zval subprotocols;
 	zval on_open;
+	zval on_handshake;
 	zval on_message;
 	zval on_close;
 	zval on_error;
@@ -142,6 +143,9 @@ typedef struct _websocket_connection_object {
 
 extern zend_class_entry *websocket_server_ce;
 extern zend_class_entry *websocket_server_options_ce;
+extern zend_class_entry *websocket_request_ce;
+extern zend_class_entry *websocket_handshake_response_ce;
+extern zend_class_entry *websocket_handshake_exception_ce;
 extern zend_class_entry *websocket_connection_ce;
 extern zend_class_entry *websocket_message_type_ce;
 extern zend_class_entry *websocket_frame_ce;
