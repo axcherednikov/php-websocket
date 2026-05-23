@@ -2,6 +2,23 @@
 
 All notable changes to ext-websocket are documented here.
 
+## 1.1.0 - 2026-05-23
+
+### Added
+
+- Added `maxConnections`, `handshakeTimeoutMs`, and `idleTimeoutMs` server options to limit idle and slowloris-style connection pressure.
+- Added UTF-8 validation for text messages and close reason payloads.
+- Added validation for reserved WebSocket close codes on outgoing close frames.
+
+### Changed
+
+- Changed masked frame generation to use random mask keys instead of a deterministic mask.
+
+### Fixed
+
+- Fixed compatibility with PHP 8.1 and 8.2 when compiling generated class constants.
+- Removed dependency on newer `ext/random` C headers when generating WebSocket mask keys.
+
 ## 1.0.0 - 2026-05-18
 
 ### Added
