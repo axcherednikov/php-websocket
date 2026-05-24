@@ -1,5 +1,5 @@
 /* This is a generated file, edit the .stub.php file instead.
- * Stub hash: 6adb6001500f3acf211a163aa05ad143a2628fbc */
+ * Stub hash: 97cba842ad6ce0a92df68f7dc4ae6193c46f1251 */
 
 ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_Server___construct, 0, 0, 0)
 	ZEND_ARG_OBJ_TYPE_MASK(0, options, WebSocket\\ServerOptions, MAY_BE_ARRAY, "[]")
@@ -40,6 +40,8 @@ ZEND_BEGIN_ARG_INFO_EX(arginfo_class_WebSocket_ServerOptions___construct, 0, 0, 
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, maxConnections, IS_LONG, 0, "10000")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, handshakeTimeoutMs, IS_LONG, 0, "10000")
 	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, idleTimeoutMs, IS_LONG, 0, "120000")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, pingIntervalMs, IS_LONG, 0, "0")
+	ZEND_ARG_TYPE_INFO_WITH_DEFAULT_VALUE(0, pongTimeoutMs, IS_LONG, 0, "10000")
 ZEND_END_ARG_INFO()
 
 ZEND_BEGIN_ARG_WITH_RETURN_TYPE_INFO_EX(arginfo_class_WebSocket_Request_header, 0, 1, IS_STRING, 1)
@@ -235,6 +237,18 @@ static zend_class_entry *register_class_WebSocket_ServerOptions(void)
 	zend_string *property_idleTimeoutMs_name = zend_string_init("idleTimeoutMs", sizeof("idleTimeoutMs") - 1, 1);
 	zend_declare_typed_property(class_entry, property_idleTimeoutMs_name, &property_idleTimeoutMs_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
 	zend_string_release(property_idleTimeoutMs_name);
+
+	zval property_pingIntervalMs_default_value;
+	ZVAL_UNDEF(&property_pingIntervalMs_default_value);
+	zend_string *property_pingIntervalMs_name = zend_string_init("pingIntervalMs", sizeof("pingIntervalMs") - 1, 1);
+	zend_declare_typed_property(class_entry, property_pingIntervalMs_name, &property_pingIntervalMs_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(property_pingIntervalMs_name);
+
+	zval property_pongTimeoutMs_default_value;
+	ZVAL_UNDEF(&property_pongTimeoutMs_default_value);
+	zend_string *property_pongTimeoutMs_name = zend_string_init("pongTimeoutMs", sizeof("pongTimeoutMs") - 1, 1);
+	zend_declare_typed_property(class_entry, property_pongTimeoutMs_name, &property_pongTimeoutMs_default_value, ZEND_ACC_PUBLIC|ZEND_ACC_READONLY, NULL, (zend_type) ZEND_TYPE_INIT_MASK(MAY_BE_LONG));
+	zend_string_release(property_pongTimeoutMs_name);
 
 	return class_entry;
 }

@@ -25,14 +25,21 @@ var_dump((new ReflectionMethod(WebSocket\HandshakeException::class, '__construct
 var_dump((new ReflectionMethod(WebSocket\Connection::class, 'send'))->getNumberOfParameters());
 var_dump((new ReflectionProperty(WebSocket\Connection::class, 'subprotocol'))->getType()->allowsNull());
 var_dump((new ReflectionMethod(WebSocket\ServerOptions::class, '__construct'))->getNumberOfParameters());
-$options = new WebSocket\ServerOptions(maxMessageSize: 1024, maxQueuedBytes: 2048, maxConnections: 16, handshakeTimeoutMs: 250, idleTimeoutMs: 500);
+$options = new WebSocket\ServerOptions(maxMessageSize: 1024, maxQueuedBytes: 2048, maxConnections: 16, handshakeTimeoutMs: 250, idleTimeoutMs: 500, pingIntervalMs: 0, pongTimeoutMs: 750);
 var_dump($options->maxMessageSize);
 var_dump($options->maxQueuedBytes);
 var_dump($options->maxConnections);
 var_dump($options->handshakeTimeoutMs);
 var_dump($options->idleTimeoutMs);
+var_dump($options->pingIntervalMs);
+var_dump($options->pongTimeoutMs);
 try {
     new WebSocket\ServerOptions(maxMessageSize: 0);
+} catch (ValueError $e) {
+    echo $e->getMessage(), "\n";
+}
+try {
+    new WebSocket\ServerOptions(pingIntervalMs: -1);
 } catch (ValueError $e) {
     echo $e->getMessage(), "\n";
 }
@@ -81,13 +88,16 @@ int(3)
 int(1)
 int(2)
 bool(true)
-int(5)
+int(7)
 int(1024)
 int(2048)
 int(16)
 int(250)
 int(500)
+int(0)
+int(750)
 WebSocket\ServerOptions::__construct(): Argument #1 ($maxMessageSize) must be at least 1
+WebSocket\ServerOptions::__construct(): Argument #6 ($pingIntervalMs) must be at least 0
 int(3)
 int(2)
 WebSocket\Server::subprotocols(): Argument #1 must be a valid WebSocket subprotocol token

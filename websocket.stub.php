@@ -25,8 +25,10 @@ final class Server
      * - maxConnections: maximum concurrently accepted TCP connections.
      * - handshakeTimeoutMs: maximum idle time before HTTP Upgrade completes.
      * - idleTimeoutMs: maximum idle time after HTTP Upgrade completes.
+     * - pingIntervalMs: idle time before the server sends an automatic ping, or 0 to disable.
+     * - pongTimeoutMs: maximum time to wait for a pong after an automatic ping.
      *
-     * @param ServerOptions|array{maxMessageSize?: int, maxQueuedBytes?: int, maxConnections?: int, handshakeTimeoutMs?: int, idleTimeoutMs?: int} $options
+     * @param ServerOptions|array{maxMessageSize?: int, maxQueuedBytes?: int, maxConnections?: int, handshakeTimeoutMs?: int, idleTimeoutMs?: int, pingIntervalMs?: int, pongTimeoutMs?: int} $options
      */
     public function __construct(ServerOptions|array $options = []) {}
 
@@ -152,13 +154,29 @@ final class ServerOptions
     public readonly int $idleTimeoutMs;
 
     /**
+     * Idle time before sending an automatic ping, in milliseconds. Zero disables heartbeat pings.
+     *
+     * @var int
+     */
+    public readonly int $pingIntervalMs;
+
+    /**
+     * Maximum time to wait for an automatic ping response, in milliseconds.
+     *
+     * @var int
+     */
+    public readonly int $pongTimeoutMs;
+
+    /**
      * @param int $maxMessageSize
      * @param int $maxQueuedBytes
      * @param int $maxConnections
      * @param int $handshakeTimeoutMs
      * @param int $idleTimeoutMs
+     * @param int $pingIntervalMs
+     * @param int $pongTimeoutMs
      *
-     * @throws \ValueError If a limit is less than 1.
+     * @throws \ValueError If a positive limit is less than 1 or pingIntervalMs is negative.
      */
     public function __construct(
         int $maxMessageSize = 16 * 1024 * 1024,
@@ -166,6 +184,8 @@ final class ServerOptions
         int $maxConnections = 10000,
         int $handshakeTimeoutMs = 10000,
         int $idleTimeoutMs = 120000,
+        int $pingIntervalMs = 0,
+        int $pongTimeoutMs = 10000,
     ) {}
 }
 

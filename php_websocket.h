@@ -27,6 +27,8 @@ extern zend_module_entry websocket_module_entry;
 #define WEBSOCKET_DEFAULT_MAX_CONNECTIONS 10000
 #define WEBSOCKET_DEFAULT_HANDSHAKE_TIMEOUT_MS 10000
 #define WEBSOCKET_DEFAULT_IDLE_TIMEOUT_MS 120000
+#define WEBSOCKET_DEFAULT_PING_INTERVAL_MS 0
+#define WEBSOCKET_DEFAULT_PONG_TIMEOUT_MS 10000
 #define WEBSOCKET_CLOSE_REASON_MAX_LEN 123
 
 #define WEBSOCKET_OPCODE_CONTINUATION 0x0
@@ -138,6 +140,8 @@ typedef struct _websocket_connection_object {
 	zend_string *fragmented_payload;
 	uint64_t accepted_at_usec;
 	uint64_t last_activity_usec;
+	uint64_t last_ping_usec;
+	bool awaiting_pong;
 	zend_object std;
 } websocket_connection_object;
 
