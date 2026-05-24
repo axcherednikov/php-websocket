@@ -46,6 +46,8 @@ static bool websocket_server_close_with_code(websocket_connection_object *connec
 static bool websocket_server_send_bytes(int fd, const char *buffer, size_t len);
 static uint64_t websocket_server_handshake_timeout_usec(websocket_server_object *intern);
 static uint64_t websocket_server_idle_timeout_usec(websocket_server_object *intern);
+static uint64_t websocket_server_ping_interval_usec(websocket_server_object *intern);
+static uint64_t websocket_server_pong_timeout_usec(websocket_server_object *intern);
 
 static const char websocket_bad_request_response[] =
 	"HTTP/1.1 400 Bad Request\r\n"
@@ -736,6 +738,31 @@ static size_t websocket_server_positive_option(websocket_server_object *intern, 
 	return (size_t) option_value;
 }
 
+static size_t websocket_server_nonnegative_option(websocket_server_object *intern, const char *name, const size_t name_len, const size_t fallback)
+{
+	zval *value;
+	zval rv;
+	zend_long option_value;
+
+	if (Z_TYPE(intern->options) == IS_ARRAY) {
+		value = zend_hash_str_find(Z_ARRVAL(intern->options), name, name_len);
+		if (!value) {
+			return fallback;
+		}
+	} else if (Z_TYPE(intern->options) == IS_OBJECT && instanceof_function(Z_OBJCE(intern->options), websocket_server_options_ce)) {
+		value = zend_read_property(websocket_server_options_ce, Z_OBJ(intern->options), name, name_len, 0, &rv);
+	} else {
+		return fallback;
+	}
+
+	option_value = zval_get_long(value);
+	if (option_value < 0) {
+		return fallback;
+	}
+
+	return (size_t) option_value;
+}
+
 static size_t websocket_server_max_message_size(websocket_server_object *intern)
 {
 	return websocket_server_positive_option(intern, "maxMessageSize", strlen("maxMessageSize"), WEBSOCKET_DEFAULT_MAX_MESSAGE_SIZE);
@@ -761,6 +788,16 @@ static uint64_t websocket_server_idle_timeout_usec(websocket_server_object *inte
 	return (uint64_t) websocket_server_positive_option(intern, "idleTimeoutMs", strlen("idleTimeoutMs"), WEBSOCKET_DEFAULT_IDLE_TIMEOUT_MS) * 1000u;
 }
 
+static uint64_t websocket_server_ping_interval_usec(websocket_server_object *intern)
+{
+	return (uint64_t) websocket_server_nonnegative_option(intern, "pingIntervalMs", strlen("pingIntervalMs"), WEBSOCKET_DEFAULT_PING_INTERVAL_MS) * 1000u;
+}
+
+static uint64_t websocket_server_pong_timeout_usec(websocket_server_object *intern)
+{
+	return (uint64_t) websocket_server_positive_option(intern, "pongTimeoutMs", strlen("pongTimeoutMs"), WEBSOCKET_DEFAULT_PONG_TIMEOUT_MS) * 1000u;
+}
+
 static bool websocket_server_close_with_code(websocket_connection_object *connection_obj, const zend_long code, const char *reason)
 {
 	zend_string *reason_string;
@@ -778,6 +815,45 @@ static bool websocket_server_close_with_code(websocket_connection_object *connec
 	}
 
 	return ok;
+}
+
+static bool websocket_server_process_heartbeat(websocket_server_object *intern, websocket_connection_object *connection_obj, const uint64_t now_usec)
+{
+	const uint64_t ping_interval_usec = websocket_server_ping_interval_usec(intern);
+	const uint64_t last_activity_usec = connection_obj->last_activity_usec ? connection_obj->last_activity_usec : connection_obj->accepted_at_usec;
+	zend_string *payload;
+	bool ok;
+
+	if (ping_interval_usec == 0 || now_usec == 0 || !connection_obj->open || !connection_obj->upgraded || connection_obj->close_after_write) {
+		return true;
+	}
+
+	if (connection_obj->awaiting_pong) {
+		const uint64_t pong_timeout_usec = websocket_server_pong_timeout_usec(intern);
+
+		if (connection_obj->last_ping_usec > 0 && now_usec >= connection_obj->last_ping_usec && now_usec - connection_obj->last_ping_usec >= pong_timeout_usec) {
+			return websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_NORMAL, "pong timeout");
+		}
+
+		return true;
+	}
+
+	if (last_activity_usec == 0 || now_usec < last_activity_usec || now_usec - last_activity_usec < ping_interval_usec) {
+		return true;
+	}
+
+	payload = zend_string_init("", 0, false);
+	ok = websocket_connection_send_frame(connection_obj, payload, WEBSOCKET_OPCODE_PING);
+	zend_string_release(payload);
+
+	if (!ok) {
+		return websocket_server_close_with_code(connection_obj, WEBSOCKET_CLOSE_NORMAL, "heartbeat failed");
+	}
+
+	connection_obj->awaiting_pong = true;
+	connection_obj->last_ping_usec = now_usec;
+
+	return true;
 }
 
 static zend_always_inline void websocket_server_mask_payload(unsigned char *dst, const unsigned char *src, const size_t len, const uint8_t mask[4])
@@ -1042,6 +1118,8 @@ static bool websocket_server_handle_frame(websocket_server_object *intern, zval 
 			ok = websocket_connection_send_frame(connection_obj, frame->payload, WEBSOCKET_OPCODE_PONG);
 			break;
 		case WEBSOCKET_OPCODE_PONG:
+			connection_obj->awaiting_pong = false;
+			connection_obj->last_ping_usec = 0;
 			break;
 		case WEBSOCKET_OPCODE_CLOSE:
 			if (connection_obj->open && connection_obj->upgraded) {
@@ -1406,6 +1484,10 @@ static bool websocket_server_process_connection_fd(websocket_server_object *inte
 			return true;
 		}
 
+		if (!websocket_server_process_heartbeat(intern, connection_obj, now_usec)) {
+			return false;
+		}
+
 		if (websocket_connection_has_pending_writes(connection_obj) && !websocket_connection_flush(connection_obj)) {
 			return true;
 		}
@@ -1439,6 +1521,10 @@ static bool websocket_server_process_connections(websocket_server_object *intern
 		if (websocket_server_connection_expired(intern, connection_obj, now_usec)) {
 			websocket_server_close_expired_connection(connection_obj);
 			continue;
+		}
+
+		if (!websocket_server_process_heartbeat(intern, connection_obj, now_usec)) {
+			return false;
 		}
 
 		if (websocket_connection_has_pending_writes(connection_obj) && !websocket_connection_flush(connection_obj)) {

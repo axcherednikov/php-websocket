@@ -106,6 +106,8 @@ Options:
 | `maxConnections` | Maximum concurrently accepted TCP connections; defaults to 10000 |
 | `handshakeTimeoutMs` | Maximum idle time before HTTP Upgrade completes; defaults to 10000 ms |
 | `idleTimeoutMs` | Maximum idle time after HTTP Upgrade completes; defaults to 120000 ms |
+| `pingIntervalMs` | Idle time before sending an automatic ping; `0` disables heartbeat pings by default |
+| `pongTimeoutMs` | Maximum time to wait for a pong after an automatic ping; defaults to 10000 ms |
 
 Prefer `WebSocket\ServerOptions` for explicit configuration. Associative arrays remain supported for compatibility.
 

@@ -36,10 +36,12 @@ $server = new WebSocket\Server(new WebSocket\ServerOptions(
     maxConnections: 1000,
     handshakeTimeoutMs: 5000,
     idleTimeoutMs: 60000,
+    pingIntervalMs: 30000,
+    pongTimeoutMs: 10000,
 ));
 ```
 
-`maxMessageSize` protects incoming frames and fragmented messages. `maxQueuedBytes` protects memory when a client reads slowly and outgoing writes need to be queued. `maxConnections`, `handshakeTimeoutMs`, and `idleTimeoutMs` protect file descriptors and event-loop work from slowloris-style or idle-connection pressure.
+`maxMessageSize` protects incoming frames and fragmented messages. `maxQueuedBytes` protects memory when a client reads slowly and outgoing writes need to be queued. `maxConnections`, `handshakeTimeoutMs`, and `idleTimeoutMs` protect file descriptors and event-loop work from slowloris-style or idle-connection pressure. `pingIntervalMs` and `pongTimeoutMs` enable heartbeat pings and close peers that stop answering pongs.
 
 ## Slow Clients
 
