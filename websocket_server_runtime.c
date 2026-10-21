@@ -247,114 +247,14 @@ static bool websocket_server_send_handshake_response(const int fd, zval *respons
 	return ok;
 }
 
-static zend_string *websocket_server_lower_header_name(const char *name, const size_t name_len)
+static bool websocket_server_create_request(zval *request, const websocket_http_upgrade *upgrade)
 {
-	zend_string *header = zend_string_init(name, name_len, false);
-	zend_string *lower = zend_string_tolower(header);
-	zend_string_release(header);
-	return lower;
-}
-
-static void websocket_server_add_request_header(zval *headers, const char *name, const size_t name_len, const char *value, const size_t value_len)
-{
-	zend_string *lower_name = websocket_server_lower_header_name(name, name_len);
-	zval *existing = zend_hash_find(Z_ARRVAL_P(headers), lower_name);
-	zval header_value;
-
-	if (existing && Z_TYPE_P(existing) == IS_STRING) {
-		zend_string *joined = strpprintf(0, "%s, %.*s", Z_STRVAL_P(existing), (int) value_len, value);
-		ZVAL_STR(&header_value, joined);
-		zend_hash_update(Z_ARRVAL_P(headers), lower_name, &header_value);
-	} else {
-		ZVAL_STRINGL(&header_value, value, value_len);
-		zend_hash_update(Z_ARRVAL_P(headers), lower_name, &header_value);
-	}
-
-	zend_string_release(lower_name);
-}
-
-static void websocket_server_http_trim(const char **value, size_t *len)
-{
-	while (*len > 0 && ((*value)[0] == ' ' || (*value)[0] == '\t')) {
-		(*value)++;
-		(*len)--;
-	}
-
-	while (*len > 0 && ((*value)[*len - 1] == ' ' || (*value)[*len - 1] == '\t')) {
-		(*len)--;
-	}
-}
-
-static bool websocket_server_create_request(zval *request, const char *buffer, const size_t bytes_consumed)
-{
-	const char *header_end = buffer + bytes_consumed - 4;
-	const char *request_line_end = memchr(buffer, '\r', bytes_consumed);
-	const char *method_end;
-	const char *target_start;
-	const char *target_end;
-	const char *line;
 	zval headers;
 
-	if (!request_line_end || request_line_end + 1 >= buffer + bytes_consumed || request_line_end[1] != '\n') {
-		return false;
-	}
-
-	method_end = memchr(buffer, ' ', (size_t) (request_line_end - buffer));
-	if (!method_end) {
-		return false;
-	}
-	target_start = method_end + 1;
-	target_end = memchr(target_start, ' ', (size_t) (request_line_end - target_start));
-	if (!target_end) {
-		return false;
-	}
-
 	object_init_ex(request, websocket_request_ce);
-	zend_update_property_stringl(websocket_request_ce, Z_OBJ_P(request), "method", strlen("method"), buffer, (size_t) (method_end - buffer));
-	zend_update_property_stringl(websocket_request_ce, Z_OBJ_P(request), "target", strlen("target"), target_start, (size_t) (target_end - target_start));
-
-	array_init(&headers);
-	line = request_line_end + 2;
-	while (line < header_end) {
-		const char *line_end = memchr(line, '\r', (size_t) (header_end - line) + 1);
-		const char *colon;
-		const char *name;
-		const char *value;
-		size_t line_len;
-		size_t name_len;
-		size_t value_len;
-
-		if (!line_end || line_end + 1 >= buffer + bytes_consumed || line_end[1] != '\n') {
-			zval_ptr_dtor(&headers);
-			zval_ptr_dtor(request);
-			ZVAL_UNDEF(request);
-			return false;
-		}
-
-		line_len = (size_t) (line_end - line);
-		if (line_len == 0) {
-			break;
-		}
-
-		colon = memchr(line, ':', line_len);
-		if (!colon) {
-			zval_ptr_dtor(&headers);
-			zval_ptr_dtor(request);
-			ZVAL_UNDEF(request);
-			return false;
-		}
-
-		name = line;
-		name_len = (size_t) (colon - line);
-		value = colon + 1;
-		value_len = line_len - name_len - 1;
-		websocket_server_http_trim(&name, &name_len);
-		websocket_server_http_trim(&value, &value_len);
-		websocket_server_add_request_header(&headers, name, name_len, value, value_len);
-
-		line = line_end + 2;
-	}
-
+	zend_update_property_stringl(websocket_request_ce, Z_OBJ_P(request), "method", strlen("method"), upgrade->method, upgrade->method_len);
+	zend_update_property_stringl(websocket_request_ce, Z_OBJ_P(request), "target", strlen("target"), upgrade->target, upgrade->target_len);
+	websocket_http_upgrade_request_headers(upgrade, &headers);
 	zend_update_property(websocket_request_ce, Z_OBJ_P(request), "headers", strlen("headers"), &headers);
 	zval_ptr_dtor(&headers);
 
@@ -1244,10 +1144,11 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 		const ssize_t bytes_read = recv(connection_obj->fd, chunk, sizeof(chunk), 0);
 
 		if (bytes_read > 0) {
-			zend_string *accept_key = NULL;
-			zend_string *selected_subprotocol = NULL;
-			size_t bytes_consumed = 0;
+			websocket_http_upgrade parsed;
 			websocket_http_upgrade_result result;
+			zend_string *accept_key;
+			zend_string *selected_subprotocol;
+			size_t bytes_consumed;
 
 			connection_obj->last_activity_usec = websocket_server_now_usec();
 
@@ -1260,14 +1161,17 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 			memcpy(connection_obj->read_buffer + connection_obj->read_buffer_len, chunk, (size_t) bytes_read);
 			connection_obj->read_buffer_len += (size_t) bytes_read;
 
-			result = websocket_http_parse_upgrade(connection_obj->read_buffer, connection_obj->read_buffer_len, Z_TYPE(intern->subprotocols) == IS_ARRAY ? Z_ARRVAL(intern->subprotocols) : NULL, &accept_key, &selected_subprotocol, &bytes_consumed);
+			websocket_http_upgrade_init(&parsed);
+			result = websocket_http_parse_upgrade(connection_obj->read_buffer, connection_obj->read_buffer_len, Z_TYPE(intern->subprotocols) == IS_ARRAY ? Z_ARRVAL(intern->subprotocols) : NULL, &parsed);
 			if (result == WEBSOCKET_HTTP_UPGRADE_INCOMPLETE) {
+				websocket_http_upgrade_destroy(&parsed);
 				continue;
 			}
 
 			if (result == WEBSOCKET_HTTP_UPGRADE_INVALID) {
 				(void) websocket_server_send_bytes(connection_obj->fd, websocket_bad_request_response, sizeof(websocket_bad_request_response) - 1);
 				connection_obj->open = false;
+				websocket_http_upgrade_destroy(&parsed);
 				return true;
 			}
 
@@ -1276,34 +1180,32 @@ static bool websocket_server_process_handshake(websocket_server_object *intern, 
 				bool accepted = true;
 
 				ZVAL_UNDEF(&request);
-				if (!websocket_server_create_request(&request, connection_obj->read_buffer, bytes_consumed)) {
+				if (!websocket_server_create_request(&request, &parsed)) {
 					(void) websocket_server_send_bytes(connection_obj->fd, websocket_bad_request_response, sizeof(websocket_bad_request_response) - 1);
 					connection_obj->open = false;
-					zend_string_release(accept_key);
-					if (selected_subprotocol) {
-						zend_string_release(selected_subprotocol);
-					}
+					websocket_http_upgrade_destroy(&parsed);
 					return true;
 				}
 
 				if (!websocket_server_call_handshake_handler(intern, &request, connection_obj, &accepted)) {
 					zval_ptr_dtor(&request);
-					zend_string_release(accept_key);
-					if (selected_subprotocol) {
-						zend_string_release(selected_subprotocol);
-					}
+					websocket_http_upgrade_destroy(&parsed);
 					return false;
 				}
 				zval_ptr_dtor(&request);
 
 				if (!accepted) {
-					zend_string_release(accept_key);
-					if (selected_subprotocol) {
-						zend_string_release(selected_subprotocol);
-					}
+					websocket_http_upgrade_destroy(&parsed);
 					return true;
 				}
 			}
+
+			accept_key = parsed.accept_key;
+			parsed.accept_key = NULL;
+			selected_subprotocol = parsed.selected_subprotocol;
+			parsed.selected_subprotocol = NULL;
+			bytes_consumed = parsed.bytes_consumed;
+			websocket_http_upgrade_destroy(&parsed);
 
 			if (!websocket_server_finish_upgrade(intern, connection, connection_obj, accept_key, selected_subprotocol, bytes_consumed)) {
 				zend_string_release(accept_key);

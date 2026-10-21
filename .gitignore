@@ -26,3 +26,4 @@ configure
 configure.ac
 libtool
 run-tests.php
+/.codex/
