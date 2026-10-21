@@ -74,6 +74,26 @@ typedef enum _websocket_http_upgrade_result {
 	WEBSOCKET_HTTP_UPGRADE_INVALID = 2,
 } websocket_http_upgrade_result;
 
+typedef struct _websocket_http_header {
+	const char *name;
+	size_t name_len;
+	const char *value;
+	size_t value_len;
+} websocket_http_header;
+
+typedef struct _websocket_http_upgrade {
+	const char *method;
+	size_t method_len;
+	const char *target;
+	size_t target_len;
+	websocket_http_header *headers;
+	size_t header_count;
+	size_t header_capacity;
+	zend_string *accept_key;
+	zend_string *selected_subprotocol;
+	size_t bytes_consumed;
+} websocket_http_upgrade;
+
 ZEND_BEGIN_MODULE_GLOBALS(websocket)
 	websocket_driver *driver;
 	uint64_t next_connection_id;
@@ -196,7 +216,10 @@ bool websocket_protocol_close_code_is_valid(zend_long code);
 bool websocket_protocol_is_valid_utf8(const char *payload, size_t payload_len);
 zend_string *websocket_protocol_pack_payload(zend_string *payload, uint8_t opcode, uint8_t flags);
 zend_string *websocket_protocol_close_payload(zend_long code, zend_string *reason);
-websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, size_t len, HashTable *supported_subprotocols, zend_string **accept_key, zend_string **selected_subprotocol, size_t *bytes_consumed);
+void websocket_http_upgrade_init(websocket_http_upgrade *upgrade);
+void websocket_http_upgrade_destroy(websocket_http_upgrade *upgrade);
+websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, size_t len, HashTable *supported_subprotocols, websocket_http_upgrade *upgrade);
+void websocket_http_upgrade_request_headers(const websocket_http_upgrade *upgrade, zval *headers);
 zend_string *websocket_http_upgrade_response(zend_string *accept_key, zend_string *selected_subprotocol);
 bool websocket_http_validate_subprotocol_token(const char *value, size_t value_len);
 

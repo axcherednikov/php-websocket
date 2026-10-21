@@ -165,9 +165,9 @@ static bool websocket_http_select_subprotocol(const char *value, const size_t va
 	return true;
 }
 
-static bool websocket_http_validate_request_line(const char *line, const size_t line_len)
+static bool websocket_http_parse_request_line(const char *line, const size_t line_len, websocket_http_upgrade *upgrade)
 {
-	const char *method_end;
+	const char *method_end = memchr(line, ' ', line_len);
 	const char *target_start;
 	const char *target_end;
 	const char *version_start;
@@ -175,7 +175,6 @@ static bool websocket_http_validate_request_line(const char *line, const size_t 
 	size_t target_len;
 	size_t version_len;
 
-	method_end = memchr(line, ' ', line_len);
 	if (!method_end) {
 		return false;
 	}
@@ -198,8 +197,16 @@ static bool websocket_http_validate_request_line(const char *line, const size_t 
 
 	version_start = target_end + 1;
 	version_len = (size_t) ((line + line_len) - version_start);
+	if (!websocket_http_equals_ci(version_start, version_len, "HTTP/1.1", strlen("HTTP/1.1"))) {
+		return false;
+	}
 
-	return websocket_http_equals_ci(version_start, version_len, "HTTP/1.1", strlen("HTTP/1.1"));
+	upgrade->method = line;
+	upgrade->method_len = method_len;
+	upgrade->target = target_start;
+	upgrade->target_len = target_len;
+
+	return true;
 }
 
 static bool websocket_http_validate_key(const char *value, const size_t value_len, zend_string **accept_key)
@@ -226,7 +233,72 @@ static bool websocket_http_validate_key(const char *value, const size_t value_le
 	return true;
 }
 
-websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, const size_t len, HashTable *supported_subprotocols, zend_string **accept_key, zend_string **selected_subprotocol, size_t *bytes_consumed)
+void websocket_http_upgrade_init(websocket_http_upgrade *upgrade)
+{
+	memset(upgrade, 0, sizeof(*upgrade));
+}
+
+void websocket_http_upgrade_destroy(websocket_http_upgrade *upgrade)
+{
+	if (upgrade->accept_key) {
+		zend_string_release(upgrade->accept_key);
+	}
+	if (upgrade->selected_subprotocol) {
+		zend_string_release(upgrade->selected_subprotocol);
+	}
+	if (upgrade->headers) {
+		efree(upgrade->headers);
+	}
+	websocket_http_upgrade_init(upgrade);
+}
+
+static void websocket_http_append_header(websocket_http_upgrade *upgrade, const char *name, const size_t name_len, const char *value, const size_t value_len)
+{
+	if (upgrade->header_count == upgrade->header_capacity) {
+		upgrade->header_capacity = upgrade->header_capacity ? upgrade->header_capacity * 2 : 8;
+		upgrade->headers = erealloc(upgrade->headers, upgrade->header_capacity * sizeof(*upgrade->headers));
+	}
+
+	upgrade->headers[upgrade->header_count].name = name;
+	upgrade->headers[upgrade->header_count].name_len = name_len;
+	upgrade->headers[upgrade->header_count].value = value;
+	upgrade->headers[upgrade->header_count].value_len = value_len;
+	upgrade->header_count++;
+}
+
+static zend_string *websocket_http_lower_header_name(const char *name, const size_t name_len)
+{
+	zend_string *header = zend_string_init(name, name_len, false);
+	zend_string *lower = zend_string_tolower(header);
+	zend_string_release(header);
+	return lower;
+}
+
+void websocket_http_upgrade_request_headers(const websocket_http_upgrade *upgrade, zval *headers)
+{
+	size_t i;
+
+	array_init(headers);
+	for (i = 0; i < upgrade->header_count; i++) {
+		const websocket_http_header *header = &upgrade->headers[i];
+		zend_string *lower_name = websocket_http_lower_header_name(header->name, header->name_len);
+		zval *existing = zend_hash_find(Z_ARRVAL_P(headers), lower_name);
+		zval header_value;
+
+		if (existing && Z_TYPE_P(existing) == IS_STRING) {
+			zend_string *joined = strpprintf(0, "%s, %.*s", Z_STRVAL_P(existing), (int) header->value_len, header->value);
+			ZVAL_STR(&header_value, joined);
+			zend_hash_update(Z_ARRVAL_P(headers), lower_name, &header_value);
+		} else {
+			ZVAL_STRINGL(&header_value, header->value, header->value_len);
+			zend_hash_update(Z_ARRVAL_P(headers), lower_name, &header_value);
+		}
+
+		zend_string_release(lower_name);
+	}
+}
+
+websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, const size_t len, HashTable *supported_subprotocols, websocket_http_upgrade *upgrade)
 {
 	const char *header_end;
 	const char *line;
@@ -234,10 +306,6 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 	bool has_upgrade = false;
 	bool has_connection = false;
 	bool has_version = false;
-
-	*accept_key = NULL;
-	*selected_subprotocol = NULL;
-	*bytes_consumed = 0;
 
 	if (len > WEBSOCKET_HTTP_MAX_REQUEST_SIZE) {
 		return WEBSOCKET_HTTP_UPGRADE_INVALID;
@@ -248,13 +316,13 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 		return WEBSOCKET_HTTP_UPGRADE_INCOMPLETE;
 	}
 
-	*bytes_consumed = (size_t) ((header_end - buffer) + 4);
+	upgrade->bytes_consumed = (size_t) ((header_end - buffer) + 4);
 	request_line_end = memchr(buffer, '\r', (size_t) (header_end - buffer));
 	if (!request_line_end || request_line_end + 1 >= buffer + len || request_line_end[1] != '\n') {
 		return WEBSOCKET_HTTP_UPGRADE_INVALID;
 	}
 
-	if (!websocket_http_validate_request_line(buffer, (size_t) (request_line_end - buffer))) {
+	if (!websocket_http_parse_request_line(buffer, (size_t) (request_line_end - buffer), upgrade)) {
 		return WEBSOCKET_HTTP_UPGRADE_INVALID;
 	}
 
@@ -269,14 +337,6 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 		size_t value_len;
 
 		if (!line_end || line_end + 1 >= buffer + len || line_end[1] != '\n') {
-			if (*accept_key) {
-				zend_string_release(*accept_key);
-				*accept_key = NULL;
-			}
-			if (*selected_subprotocol) {
-				zend_string_release(*selected_subprotocol);
-				*selected_subprotocol = NULL;
-			}
 			return WEBSOCKET_HTTP_UPGRADE_INVALID;
 		}
 
@@ -287,14 +347,6 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 
 		colon = memchr(line, ':', line_len);
 		if (!colon) {
-			if (*accept_key) {
-				zend_string_release(*accept_key);
-				*accept_key = NULL;
-			}
-			if (*selected_subprotocol) {
-				zend_string_release(*selected_subprotocol);
-				*selected_subprotocol = NULL;
-			}
 			return WEBSOCKET_HTTP_UPGRADE_INVALID;
 		}
 
@@ -304,6 +356,7 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 		value_len = line_len - name_len - 1;
 		websocket_http_trim(&name, &name_len);
 		websocket_http_trim(&value, &value_len);
+		websocket_http_append_header(upgrade, name, name_len, value, value_len);
 
 		if (websocket_http_equals_ci(name, name_len, "Upgrade", strlen("Upgrade"))) {
 			has_upgrade = websocket_http_header_contains_token(value, value_len, "websocket", strlen("websocket"));
@@ -312,33 +365,15 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Version", strlen("Sec-WebSocket-Version"))) {
 			has_version = websocket_http_equals_ci(value, value_len, "13", strlen("13"));
 		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Key", strlen("Sec-WebSocket-Key"))) {
-			if (*accept_key) {
-				zend_string_release(*accept_key);
-				*accept_key = NULL;
-				if (*selected_subprotocol) {
-					zend_string_release(*selected_subprotocol);
-					*selected_subprotocol = NULL;
-				}
+			if (upgrade->accept_key) {
 				return WEBSOCKET_HTTP_UPGRADE_INVALID;
 			}
 
-			if (!websocket_http_validate_key(value, value_len, accept_key)) {
-				if (*selected_subprotocol) {
-					zend_string_release(*selected_subprotocol);
-					*selected_subprotocol = NULL;
-				}
+			if (!websocket_http_validate_key(value, value_len, &upgrade->accept_key)) {
 				return WEBSOCKET_HTTP_UPGRADE_INVALID;
 			}
 		} else if (websocket_http_equals_ci(name, name_len, "Sec-WebSocket-Protocol", strlen("Sec-WebSocket-Protocol"))) {
-			if (!websocket_http_select_subprotocol(value, value_len, supported_subprotocols, selected_subprotocol)) {
-				if (*accept_key) {
-					zend_string_release(*accept_key);
-					*accept_key = NULL;
-				}
-				if (*selected_subprotocol) {
-					zend_string_release(*selected_subprotocol);
-					*selected_subprotocol = NULL;
-				}
+			if (!websocket_http_select_subprotocol(value, value_len, supported_subprotocols, &upgrade->selected_subprotocol)) {
 				return WEBSOCKET_HTTP_UPGRADE_INVALID;
 			}
 		}
@@ -346,15 +381,7 @@ websocket_http_upgrade_result websocket_http_parse_upgrade(const char *buffer, c
 		line = line_end + 2;
 	}
 
-	if (!has_upgrade || !has_connection || !has_version || !*accept_key) {
-		if (*accept_key) {
-			zend_string_release(*accept_key);
-			*accept_key = NULL;
-		}
-		if (*selected_subprotocol) {
-			zend_string_release(*selected_subprotocol);
-			*selected_subprotocol = NULL;
-		}
+	if (!has_upgrade || !has_connection || !has_version || !upgrade->accept_key) {
 		return WEBSOCKET_HTTP_UPGRADE_INVALID;
 	}
 
