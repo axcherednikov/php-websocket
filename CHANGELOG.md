@@ -2,11 +2,20 @@
 
 All notable changes to ext-websocket are documented here.
 
-## Unreleased
+## 1.4.0 - 2026-10-22
 
 ### Added
 
 - Added opt-in server heartbeat pings with `pingIntervalMs` and `pongTimeoutMs` options.
+
+### Changed
+
+- Reused parsed HTTP Upgrade data for handshake validation and `WebSocket\Request`, preserving existing request and header behavior.
+
+## 1.3.0 - 2026-05-23
+
+### Added
+
 - Added `WebSocket\Server::onHandshake()` with `WebSocket\Request`, `WebSocket\HandshakeResponse`, and `WebSocket\HandshakeException` for pre-upgrade handshake validation.
 
 ## 1.2.1 - 2026-05-23
